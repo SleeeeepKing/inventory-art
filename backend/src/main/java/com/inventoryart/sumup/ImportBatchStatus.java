@@ -1,0 +1,13 @@
+package com.inventoryart.sumup;
+
+public enum ImportBatchStatus {
+    UPLOADED,
+    ANALYZING,
+    READY_FOR_MAPPING,
+    READY_FOR_CONFIRMATION,
+    IMPORTING,
+    COMPLETED,
+    COMPLETED_WITH_ERRORS,
+    FAILED,
+    REVERSED
+}

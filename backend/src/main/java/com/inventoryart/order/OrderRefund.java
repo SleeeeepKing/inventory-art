@@ -1,0 +1,3 @@
+package com.inventoryart.order;
+import jakarta.persistence.*;import java.math.BigDecimal;import java.time.Instant;import java.util.UUID;
+@Entity @Table(name="order_refunds") public class OrderRefund{@Id private UUID id;@Column(name="tenant_id")private UUID tenantId;@Column(name="order_id")private UUID orderId;private BigDecimal amount;private String reason;@Column(name="created_by")private UUID createdBy;@Column(name="created_at")private Instant createdAt;protected OrderRefund(){}public OrderRefund(UUID tenant,UUID order,BigDecimal amount,String reason,UUID user){id=UUID.randomUUID();tenantId=tenant;orderId=order;this.amount=amount;this.reason=reason;createdBy=user;createdAt=Instant.now();}public UUID getId(){return id;}public BigDecimal getAmount(){return amount;}}

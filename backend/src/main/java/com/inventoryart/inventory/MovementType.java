@@ -1,0 +1,3 @@
+package com.inventoryart.inventory;
+public enum MovementType { INITIAL, PURCHASE, SALE, RETURN, ADJUSTMENT_IN, ADJUSTMENT_OUT, ORDER_CANCEL, ORDER_REFUND, SUMUP_IMPORT, SUMUP_REVERSAL }
+

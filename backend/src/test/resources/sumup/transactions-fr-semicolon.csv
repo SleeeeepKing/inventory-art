@@ -1,0 +1,2 @@
+Identifiant transaction;Date;Heure;Montant;Devise;Statut;Mode de paiement
+tx-fr-1;10/07/2026;14:30:00;25,00;EUR;Réussi;Carte

@@ -1,0 +1,4 @@
+SumUp order export
+Generated for test tenant
+Transaction ID,Product,Reference,Quantity,Revenue
+tx-order-1,Limited print,ART-1,2,50.00

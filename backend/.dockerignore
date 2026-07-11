@@ -1,0 +1,5 @@
+target
+.git
+storage-data
+*.log
+

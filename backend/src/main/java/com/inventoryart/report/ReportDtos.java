@@ -1,0 +1,24 @@
+package com.inventoryart.report;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+public final class ReportDtos {
+    private ReportDtos() {}
+
+    public record CurrencyMetrics(String currency, BigDecimal grossSales, BigDecimal discounts,
+                                  BigDecimal refunds, BigDecimal netSales, BigDecimal sumUpFees,
+                                  BigDecimal afterFees, long orderCount, long successfulPaymentCount,
+                                  BigDecimal averageOrderValue) {}
+    public record DailyTrend(LocalDate date, String currency, BigDecimal netSales, BigDecimal fees, long orders) {}
+    public record Breakdown(String label, String currency, BigDecimal netSales, long orders) {}
+    public record ProductRank(UUID productId, String sku, String name, long quantity, BigDecimal revenue) {}
+    public record Dashboard(LocalDate startDate, LocalDate endDate, String timezone, String defaultCurrency,
+                            List<CurrencyMetrics> currencies, List<DailyTrend> dailyTrend,
+                            List<ProductRank> topProducts, List<Breakdown> bySource,
+                            List<Breakdown> byChannel, List<Breakdown> byPaymentMethod,
+                            List<Breakdown> byEvent, long lowStockProducts, long unallocatedTransactions,
+                            long importErrors) {}
+}
