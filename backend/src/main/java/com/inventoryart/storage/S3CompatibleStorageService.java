@@ -147,7 +147,8 @@ public final class S3CompatibleStorageService implements StorageService, AutoClo
     return new BusinessException(
         "STORAGE_PROVIDER_ERROR",
         "Unable to " + operation + " private object",
-        HttpStatus.BAD_GATEWAY);
+        HttpStatus.BAD_GATEWAY,
+        cause);
   }
 
   @Override
