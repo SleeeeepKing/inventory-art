@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
-import { uploadPresignedFile, type PresignedUpload } from '@/services/fileUpload'
+import { uploadPendingFile, type PendingUpload } from '@/services/fileUpload'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
@@ -81,14 +81,14 @@ async function uploadImage(productId: string, file: File) {
   const checksumSha256 = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('')
-  const { data } = await api.post<PresignedUpload>('/files/presign', {
+  const { data } = await api.post<PendingUpload>('/files/presign', {
     originalFilename: file.name,
     contentType: file.type,
     size: file.size,
     checksumSha256,
     productId,
   })
-  await uploadPresignedFile(data, file, checksumSha256)
+  await uploadPendingFile(data, file, checksumSha256)
   await api.post(`/files/${data.fileId}/confirm`)
 }
 
