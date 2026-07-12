@@ -49,6 +49,7 @@ app:
   security:
     cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
     cookie-secure: ${COOKIE_SECURE:false}
+    cookie-same-site: ${COOKIE_SAME_SITE:Lax}
   storage:
     provider: ${STORAGE_PROVIDER:local}
     local-path: ${LOCAL_STORAGE_PATH:./storage-data}

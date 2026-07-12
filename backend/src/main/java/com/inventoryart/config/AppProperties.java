@@ -23,9 +23,10 @@ public class AppProperties {
         public long getRefreshTokenDays() { return refreshTokenDays; } public void setRefreshTokenDays(long value) { refreshTokenDays = value; }
     }
     public static class Security {
-        private String corsAllowedOrigins; private boolean cookieSecure;
+        private String corsAllowedOrigins; private boolean cookieSecure; private String cookieSameSite = "Lax";
         public String getCorsAllowedOrigins() { return corsAllowedOrigins; } public void setCorsAllowedOrigins(String value) { corsAllowedOrigins = value; }
         public boolean isCookieSecure() { return cookieSecure; } public void setCookieSecure(boolean value) { cookieSecure = value; }
+        public String getCookieSameSite() { return cookieSameSite; } public void setCookieSameSite(String value) { cookieSameSite = value; }
     }
     public static class Storage {
         private String provider; private String localPath; private String endpoint; private String publicEndpoint; private String region; private String accessKey;

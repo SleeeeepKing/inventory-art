@@ -25,6 +25,7 @@ spring:
 app:
   security:
     cookie-secure: true
+    cookie-same-site: ${COOKIE_SAME_SITE:None}
   storage:
     provider: r2
   seed:

@@ -30,7 +30,7 @@ public class AuthController {
     private ResponseEntity<AuthDtos.AuthResponse> response(AuthService.Session session) {
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie(session.refreshToken(), Duration.ofDays(properties.getJwt().getRefreshTokenDays())).toString()).body(session.response());
     }
-    private ResponseCookie cookie(String value, Duration maxAge) { return ResponseCookie.from(COOKIE, value).httpOnly(true).secure(properties.getSecurity().isCookieSecure()).sameSite("Lax").path("/api/v1/auth").maxAge(maxAge).build(); }
+    private ResponseCookie cookie(String value, Duration maxAge) { return ResponseCookie.from(COOKIE, value).httpOnly(true).secure(properties.getSecurity().isCookieSecure()).sameSite(properties.getSecurity().getCookieSameSite()).path("/api/v1/auth").maxAge(maxAge).build(); }
     private String clientIp(HttpServletRequest request) { String forwarded=request.getHeader("X-Forwarded-For"); return forwarded == null ? request.getRemoteAddr() : forwarded.split(",")[0].trim(); }
     private void validateOrigin(HttpServletRequest request) {
         String origin=request.getHeader("Origin");
