@@ -30,7 +30,8 @@ export function useApiFeedback() {
   function showError(error: unknown) {
     const parsed = parseApiError(error)
     let message: string
-    if (parsed.networkError) message = t('errors.network')
+    if (parsed.uncertainWrite) message = t('errors.writeOutcomeUnknown')
+    else if (parsed.networkError) message = t('errors.network')
     else if (Object.keys(parsed.fieldErrors).length) {
       const details = [...new Set(Object.values(parsed.fieldErrors))].join('; ')
       message = `${t(errorKeys[parsed.code] || 'errors.validation')} ${details}`

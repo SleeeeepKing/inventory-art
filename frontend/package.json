@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "pwa:assets": "pwa-assets-generator --preset minimal-2023 --root public --html=false --manifest=false pwa-icon.svg && node scripts/generate-maskable-icon.mjs",
+    "pwa:check": "node scripts/check-pwa-build.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json --pretty false",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
+    "@vite-pwa/assets-generator": "^1.0.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/eslint-config-typescript": "^14.6.0",
     "@vue/test-utils": "^2.4.6",
@@ -36,7 +39,12 @@
     "prettier": "^3.9.0",
     "typescript": "^5.9.3",
     "vite": "^8.1.4",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10",
-    "vue-tsc": "^3.2.5"
+    "vue-tsc": "^3.2.5",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
   }
 }

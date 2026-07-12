@@ -86,3 +86,6 @@ jobs:
 
       - name: Build production bundle
         run: npm run build
+
+      - name: Verify PWA artifacts and cache boundaries
+        run: npm run pwa:check

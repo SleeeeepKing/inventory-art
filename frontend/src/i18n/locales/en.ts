@@ -81,6 +81,7 @@ export const en = {
     signingIn: 'Signing in…',
     secureSession: 'Secure session with rotating refresh tokens',
     loginFailed: 'The email or password is incorrect.',
+    restoringSession: 'Checking your secure session…',
   },
   dashboard: {
     eyebrow: 'Overview',
@@ -338,10 +339,49 @@ export const en = {
     USER: 'User',
     ADMIN: 'Administrator',
   },
+  pwa: {
+    install: 'Install app',
+    showInstructions: 'Show steps',
+    later: 'Later',
+    updateNow: 'Update now',
+    updateTitle: 'Update Inventory Art?',
+    updateWarning: 'The app will reload. Save any form you are editing before updating.',
+    status: {
+      offline: {
+        title: 'You are offline',
+        body: 'The app shell is available, but business data and changes require a connection.',
+      },
+      update: {
+        title: 'A new version is ready',
+        body: 'Update when you have saved your current work.',
+      },
+      backend: {
+        title: 'Connecting to the server',
+        body: 'After a quiet period, the secure service may need a moment to start.',
+        unavailable: 'The server is taking longer than expected. You can try the safe check again.',
+      },
+      ready: {
+        title: 'App shell ready offline',
+        body: 'Interface files are saved on this device. Business data is never stored offline.',
+      },
+      install: {
+        title: 'Keep Inventory Art on this device',
+        body: 'Install the secure workspace for a full-screen, standalone experience.',
+      },
+    },
+    ios: {
+      title: 'Add to the Home Screen',
+      share: 'Open the browser Share menu.',
+      add: 'Choose “Add to Home Screen”.',
+      confirm: 'Confirm the name, then tap Add.',
+    },
+  },
   errors: {
     title: 'Something needs attention',
     generic: 'The request could not be completed. Try again.',
     network: 'The service cannot be reached. Check your connection and try again.',
+    writeOutcomeUnknown:
+      'The connection ended before the result was confirmed. Refresh the list before submitting again.',
     forbidden: 'You do not have permission to perform this action.',
     notFound: 'Page not found',
     notFoundBody: 'The page may have moved or no longer exists.',

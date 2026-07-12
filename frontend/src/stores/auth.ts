@@ -1,6 +1,14 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { api, configureSessionHandlers, refreshSession, setAccessToken } from '@/services/api'
+import {
+  api,
+  configureSessionHandlers,
+  refreshSession,
+  setAccessToken,
+  warmBackend,
+} from '@/services/api'
+import { resetConnectivityState } from '@/services/connectivity'
+import { broadcastSessionChange } from '@/services/sessionSync'
 import { setAppLocale } from '@/i18n'
 import type { AuthResponse, SupportedLocale, UserProfile } from '@/types/api'
 
@@ -24,12 +32,14 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     user.value = null
     setAccessToken(null)
+    resetConnectivityState()
     setAppLocale('en')
   }
 
-  function invalidateLocalSession() {
+  function invalidateLocalSession(notifyOtherTabs = true) {
     clearSession()
     initialized.value = true
+    if (notifyOtherTabs) broadcastSessionChange()
   }
 
   configureSessionHandlers({ updated: applySession, expired: clearSession })
@@ -37,6 +47,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function initialize() {
     if (initialized.value) return
     try {
+      await warmBackend()
       applySession(await refreshSession())
     } catch {
       clearSession()
@@ -51,6 +62,7 @@ export const useAuthStore = defineStore('auth', () => {
       const { data } = await api.post<AuthResponse>('/auth/login', { username, password })
       applySession(data)
       initialized.value = true
+      broadcastSessionChange()
     } finally {
       loading.value = false
     }
@@ -62,7 +74,14 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearSession()
       initialized.value = true
+      broadcastSessionChange()
     }
+  }
+
+  async function revalidateSession() {
+    clearSession()
+    initialized.value = false
+    await initialize()
   }
 
   async function updateProfile(payload: { displayName: string; preferredLocale: SupportedLocale }) {
@@ -93,5 +112,6 @@ export const useAuthStore = defineStore('auth', () => {
     applySession,
     clearSession,
     invalidateLocalSession,
+    revalidateSession,
   }
 })

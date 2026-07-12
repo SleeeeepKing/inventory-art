@@ -47,6 +47,9 @@ body,
   min-height: 100%;
   margin: 0;
 }
+#app {
+  min-height: 100dvh;
+}
 body {
   background: var(--paper);
   color: var(--ink-950);
@@ -345,6 +348,137 @@ a {
 }
 body.nav-open {
   overflow: hidden;
+}
+
+/* PWA system tickets: compact operational notices, not page-level decoration */
+.pwa-status {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 80;
+  display: grid;
+  width: min(520px, calc(100vw - 36px));
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--ink-150);
+  border-left: 4px solid var(--ink-700);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+}
+.pwa-status[data-tone='offline'] {
+  border-left-color: var(--amber);
+}
+.pwa-status[data-tone='update'],
+.pwa-status[data-tone='install'] {
+  border-left-color: var(--coral);
+}
+.pwa-status[data-tone='ready'] {
+  border-left-color: var(--teal);
+}
+.pwa-status__mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ink-100);
+  color: var(--ink-800);
+}
+.pwa-status[data-tone='offline'] .pwa-status__mark {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.pwa-status[data-tone='update'] .pwa-status__mark,
+.pwa-status[data-tone='install'] .pwa-status__mark {
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+}
+.pwa-status[data-tone='ready'] .pwa-status__mark {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+.pwa-status__mark svg {
+  width: 20px;
+}
+.pwa-status__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.pwa-status__copy strong {
+  color: var(--ink-950);
+  font: 750 13px var(--display);
+}
+.pwa-status__copy small {
+  color: var(--ink-700);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.pwa-status__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pwa-status__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.pwa-install-guide {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+.pwa-install-guide__icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--coral-soft);
+  color: var(--coral-dark);
+}
+.pwa-install-guide__icon svg {
+  width: 24px;
+}
+.pwa-install-guide ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ink-800);
+  line-height: 1.75;
+}
+.session-revalidation {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--paper);
+  color: var(--ink-700);
+  font: 700 11px var(--utility);
+  letter-spacing: 0.04em;
+}
+.session-revalidation > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 0 7px var(--coral-soft);
+}
+.pwa-ticket-enter-active,
+.pwa-ticket-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.pwa-ticket-enter-from,
+.pwa-ticket-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 
 /* Shared page grammar */
@@ -1798,6 +1932,22 @@ body.nav-open {
     width: 100%;
     padding: 22px 13px calc(36px + env(safe-area-inset-bottom));
   }
+  .pwa-status {
+    top: calc(66px + env(safe-area-inset-top));
+    right: 13px;
+    bottom: auto;
+    left: 13px;
+    width: auto;
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  .pwa-status__mark {
+    width: 38px;
+    height: 38px;
+  }
+  .pwa-status__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
   .page-stack {
     gap: 18px;
   }
@@ -2088,6 +2238,29 @@ body.nav-open {
   }
   .login-submit {
     min-height: 48px;
+  }
+}
+
+@media (display-mode: standalone) {
+  .workspace__bar {
+    height: calc(52px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+  .brand-lockup {
+    min-height: calc(78px + env(safe-area-inset-top));
+    padding-top: calc(17px + env(safe-area-inset-top));
+  }
+  .login-panel {
+    padding-top: calc(42px + env(safe-area-inset-top));
+  }
+}
+
+@media (display-mode: standalone) and (max-width: 900px) {
+  .mobile-menu {
+    top: calc(6px + env(safe-area-inset-top));
+  }
+  .workspace__bar {
+    height: calc(56px + env(safe-area-inset-top));
   }
 }
 
