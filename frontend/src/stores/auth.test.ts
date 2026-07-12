@@ -50,6 +50,16 @@ describe('auth locale behavior', () => {
     expect(i18n.global.locale.value).toBe('en')
   })
 
+  it('invalidates the local session after a password change', () => {
+    const auth = useAuthStore()
+    auth.applySession(session('fr-FR'))
+    auth.invalidateLocalSession()
+    expect(auth.user).toBeNull()
+    expect(auth.token).toBeNull()
+    expect(auth.initialized).toBe(true)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
   it('persists a changed locale and keeps the server response', async () => {
     const auth = useAuthStore()
     auth.applySession(session('en'))

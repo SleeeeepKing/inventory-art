@@ -7,7 +7,7 @@ import { api } from '@/services/api'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Order, PageResponse, Product, SalesEvent } from '@/types/api'
+import type { Order, OrderBatchFailure, OrderBatchResponse, PageResponse, Product, SalesEvent } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
@@ -23,6 +23,8 @@ const dialogOpen = ref(false)
 const eventsDialogOpen = ref(false)
 const eventEditorOpen = ref(false)
 const eventSaving = ref(false)
+const batchProcessing = ref(false)
+const batchResultOpen = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const statusFilter = ref('')
@@ -30,10 +32,14 @@ const eventFilter = ref('')
 const page = ref<PageResponse<Order>>(normalizePage([]))
 const products = ref<Product[]>([])
 const events = ref<SalesEvent[]>([])
+const selectedOrders = ref<Order[]>([])
+const batchFailures = ref<OrderBatchFailure[]>([])
 const eventEditor = reactive({ id: '', name: '', enabled: true, selectAfterCreate: false })
 const form = reactive({ customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: 'EUR', customerNote: '', items: [{ productId: '', quantity: 1, unitPrice: 0 }] as DraftItem[] })
 const orderTotal = computed(() => form.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0))
 const activeEvents = computed(() => events.value.filter((event) => event.enabled))
+const batchConfirmOrders = computed(() => selectedOrders.value.filter((order) => order.status === 'DRAFT'))
+const batchCancelOrders = computed(() => selectedOrders.value.filter((order) => ['DRAFT', 'CONFIRMED'].includes(order.status)))
 
 async function load() {
   loading.value = true
@@ -112,10 +118,40 @@ async function createOrder() {
       paymentStatus: 'PAID',
       items: form.items.map((item) => ({ ...item, discountAmount: 0, taxRate: 0 })),
     })
-    ElMessage.success(t('orders.created'))
+    ElMessage.success(t('orders.recorded'))
     dialogOpen.value = false
     await load()
   } catch (error) { showError(error) } finally { saving.value = false }
+}
+
+function canBatchSelect(order: Order) {
+  return ['DRAFT', 'CONFIRMED'].includes(order.status)
+}
+
+async function batchTransition(action: 'confirm' | 'cancel') {
+  const candidates = action === 'confirm' ? batchConfirmOrders.value : batchCancelOrders.value
+  if (!candidates.length) return
+  const stockCount = candidates.filter((order) => order.status === 'CONFIRMED').length
+  try {
+    await ElMessageBox.confirm(
+      t(action === 'confirm' ? 'orders.batchConfirmBody' : 'orders.batchCancelBody', { count: candidates.length, stockCount }),
+      t(action === 'confirm' ? 'orders.batchConfirmTitle' : 'orders.batchCancelTitle'),
+      { type: 'warning', confirmButtonText: t(action === 'confirm' ? 'orders.batchConfirm' : 'orders.batchCancel'), cancelButtonText: t('common.cancel') },
+    )
+    batchProcessing.value = true
+    const { data } = await api.post<OrderBatchResponse>(`/orders/batch-${action}`, { orderIds: candidates.map((order) => order.id) })
+    batchFailures.value = data.failed
+    if (data.failed.length) {
+      batchResultOpen.value = true
+      ElMessage.warning(t('orders.batchPartial', { succeeded: data.succeeded.length, failed: data.failed.length }))
+    } else {
+      ElMessage.success(t('orders.batchSucceeded', { count: data.succeeded.length }))
+    }
+    selectedOrders.value = []
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') showError(error)
+  } finally { batchProcessing.value = false }
 }
 
 async function transition(order: Order, action: 'confirm' | 'cancel' | 'refund') {
@@ -155,7 +191,13 @@ onMounted(load)
         <ElButton :icon="RefreshRight" @click="load">{{ t('common.refresh') }}</ElButton>
         <span class="table-toolbar__count">{{ t('common.items', { count: page.totalElements }) }}</span>
       </div>
-      <ElTable v-if="page.items.length || loading" v-loading="loading" :data="page.items" row-key="id">
+      <div v-if="selectedOrders.length" class="table-toolbar">
+        <span>{{ t('orders.selectedCount', { count: selectedOrders.length }) }}</span>
+        <ElButton type="primary" :loading="batchProcessing" :disabled="!batchConfirmOrders.length" @click="batchTransition('confirm')">{{ t('orders.batchConfirm') }} ({{ batchConfirmOrders.length }})</ElButton>
+        <ElButton type="danger" plain :loading="batchProcessing" :disabled="!batchCancelOrders.length" @click="batchTransition('cancel')">{{ t('orders.batchCancel') }} ({{ batchCancelOrders.length }})</ElButton>
+      </div>
+      <ElTable v-if="page.items.length || loading" v-loading="loading" :data="page.items" row-key="id" @selection-change="selectedOrders = $event">
+        <ElTableColumn type="selection" width="48" :selectable="canBatchSelect" />
         <ElTableColumn type="expand"><template #default="scope"><div class="order-lines"><div v-for="item in scope.row.items" :key="item.id || item.productId"><span><strong>{{ item.productName || item.sku }}</strong><small>{{ item.sku }}</small></span><span>{{ item.quantity }} × {{ money(item.unitPrice, scope.row.currency) }}</span><b>{{ money(item.lineTotal ?? item.quantity * item.unitPrice, scope.row.currency) }}</b></div></div></template></ElTableColumn>
         <ElTableColumn prop="orderNumber" :label="t('orders.orderNumber')" min-width="150"><template #default="scope"><code class="order-code">{{ scope.row.orderNumber }}</code></template></ElTableColumn>
         <ElTableColumn :label="t('orders.customer')" min-width="180"><template #default="scope"><div class="cell-stack"><strong>{{ scope.row.customerName || '—' }}</strong><small>{{ scope.row.customerEmail }}</small></div></template></ElTableColumn>
@@ -215,6 +257,13 @@ onMounted(load)
         <ElFormItem :label="t('orders.event')" required><ElInput v-model="eventEditor.name" maxlength="240" show-word-limit /></ElFormItem>
       </ElForm>
       <template #footer><ElButton @click="eventEditorOpen = false">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="eventSaving" @click="saveEvent">{{ eventSaving ? t('common.saving') : t('common.save') }}</ElButton></template>
+    </ElDialog>
+
+    <ElDialog v-model="batchResultOpen" :title="t('orders.batchFailures')" width="min(620px, 94vw)">
+      <ElTable :data="batchFailures">
+        <ElTableColumn :label="t('orders.orderNumber')" min-width="180"><template #default="scope">{{ scope.row.orderNumber || scope.row.id }}</template></ElTableColumn>
+        <ElTableColumn prop="message" :label="t('errors.title')" min-width="280" />
+      </ElTable>
     </ElDialog>
   </div>
 </template>

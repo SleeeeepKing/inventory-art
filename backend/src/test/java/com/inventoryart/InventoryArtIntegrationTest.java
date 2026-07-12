@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class InventoryArtIntegrationTest {
     @Container static final PostgreSQLContainer<?> POSTGRES=new PostgreSQLContainer<>("postgres:17-alpine");
     @DynamicPropertySource static void database(DynamicPropertyRegistry r){r.add("spring.datasource.url",POSTGRES::getJdbcUrl);r.add("spring.datasource.username",POSTGRES::getUsername);r.add("spring.datasource.password",POSTGRES::getPassword);}
-    @Autowired MockMvc mvc;@Autowired ObjectMapper json;@Autowired TenantRepository tenants;@Autowired UserRepository users;@Autowired ProductRepository products;@Autowired PasswordEncoder passwords;@Autowired InventoryService inventory;@Autowired OrderService orderService;@Autowired AuditLogRepository audits;@Autowired PaymentRepository payments;
+    @Autowired MockMvc mvc;@Autowired ObjectMapper json;@Autowired TenantRepository tenants;@Autowired UserRepository users;@Autowired ProductRepository products;@Autowired PasswordEncoder passwords;@Autowired InventoryService inventory;@Autowired OrderService orderService;@Autowired OrderRepository orders;@Autowired OrderItemRepository orderItems;@Autowired AuditLogRepository audits;@Autowired PaymentRepository payments;
 
     @Test void loginRefreshAndLocalePersistence() throws Exception {
         Fixture f=fixture("auth");
@@ -71,6 +71,35 @@ class InventoryArtIntegrationTest {
             "email","friend-"+nonce+"@example.test","password","AnotherValid123!","displayName","Friend","role","USER"));
         mvc.perform(post("/api/v1/admin/users").with(adminJwt(admin)).contentType(MediaType.APPLICATION_JSON).content(create))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.preferredLocale").value("en"));
+    }
+
+    @Test void usersChangeTheirOwnPasswordAndAdminsResetAnyPassword() throws Exception {
+        Fixture f=fixture("password");String loginBody=json.writeValueAsString(Map.of("username",f.user.getUsername(),"password","ValidPassword123!"));
+        var login=mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(loginBody)).andExpect(status().isOk()).andReturn();
+        var refreshCookie=Objects.requireNonNull(login.getResponse().getCookie("refresh_token"));
+        mvc.perform(post("/api/v1/profile/password").with(userJwt(f)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"wrong-password\",\"newPassword\":\"ChangedPassword123!\"}"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PASSWORD"));
+        mvc.perform(post("/api/v1/profile/password").with(userJwt(f)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"ValidPassword123!\",\"newPassword\":\"ChangedPassword123!\"}"))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/refresh").cookie(refreshCookie))
+            .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(loginBody)).andExpect(status().isUnauthorized());
+        String changedLogin=json.writeValueAsString(Map.of("username",f.user.getUsername(),"password","ChangedPassword123!"));
+        var changedSession=mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(changedLogin)).andExpect(status().isOk()).andReturn();
+        var changedCookie=Objects.requireNonNull(changedSession.getResponse().getCookie("refresh_token"));
+
+        User admin=users.save(new User(UUID.randomUUID(),null,"password-admin-"+UUID.randomUUID(),"password-admin-"+UUID.randomUUID()+"@test.local",passwords.encode("ValidPassword123!"),"Admin",UserRole.ADMIN));
+        mvc.perform(post("/api/v1/admin/users/{id}/reset-password",f.user.getId()).with(adminJwt(admin)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"password\":\"AdminResetPassword123!\"}"))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/refresh").cookie(changedCookie))
+            .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+        String resetLogin=json.writeValueAsString(Map.of("username",f.user.getUsername(),"password","AdminResetPassword123!"));
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(resetLogin)).andExpect(status().isOk());
+        assertThat(audits.findAll()).anyMatch(a->a.getAction().equals("PASSWORD_CHANGE")&&a.getResourceId().equals(f.user.getId()));
+        assertThat(audits.findAll()).anyMatch(a->a.getAction().equals("USER_PASSWORD_RESET")&&a.getResourceId().equals(f.user.getId()));
     }
 
     @Test void tenantResourcesAreNotDiscoverableAcrossUsers() throws Exception {
@@ -134,17 +163,44 @@ class InventoryArtIntegrationTest {
     @Test void orderConfirmationCancellationAndRefundAreInventorySafe() {
         Fixture f=fixture("orders");Product p=product(f,"SKU-ORDER",10);
         OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.ONLINE,null,null,"Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
-        var draft=orderService.create(f.tenant.getId(),f.user.getId(),req);var confirmed=orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id());
+        var confirmed=orderService.create(f.tenant.getId(),f.user.getId(),req);
+        assertThat(confirmed.status()).isEqualTo("CONFIRMED");
         assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
-        assertThat(payments.existsByTenantIdAndOrderId(f.tenant.getId(),draft.id())).isTrue();
-        assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id())).hasMessageContaining("already");
-        var refund=orderService.refund(f.tenant.getId(),f.user.getId(),draft.id(),new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
+        assertThat(payments.existsByTenantIdAndOrderId(f.tenant.getId(),confirmed.id())).isTrue();
+        assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),confirmed.id())).hasMessageContaining("already");
+        var refund=orderService.refund(f.tenant.getId(),f.user.getId(),confirmed.id(),new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
         assertThat(refund.status()).isEqualTo("PARTIALLY_REFUNDED");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
     }
 
-    @Test void insufficientStockRollsBackOrderConfirmation() {
-        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());var draft=orderService.create(f.tenant.getId(),f.user.getId(),req);
-        assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id())).hasMessageContaining("Insufficient");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);
+    @Test void insufficientStockRollsBackOrderCreation() {
+        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
+        assertThatThrownBy(()->orderService.create(f.tenant.getId(),f.user.getId(),req)).hasMessageContaining("Insufficient");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);assertThat(orders.existsByTenantId(f.tenant.getId())).isFalse();
+    }
+
+    @Test void batchOrderActionsPartiallySucceedAndRemainTenantScoped() throws Exception {
+        Fixture first=fixture("batch-first"),second=fixture("batch-second");Product firstProduct=product(first,"BATCH",10),secondProduct=product(second,"OTHER-BATCH",5);
+        SalesOrder legacyDraft=draft(first,firstProduct,2);
+        OrderDtos.Request otherRequest=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(secondProduct.getId(),1,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
+        var otherOrder=orderService.create(second.tenant.getId(),second.user.getId(),otherRequest);
+
+        UUID missing=UUID.randomUUID();
+        String confirm=json.writeValueAsString(Map.of("orderIds",List.of(legacyDraft.getId(),missing)));
+        mvc.perform(post("/api/v1/orders/batch-confirm").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(confirm))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.succeeded.length()").value(1))
+            .andExpect(jsonPath("$.succeeded[0].id").value(legacyDraft.getId().toString()))
+            .andExpect(jsonPath("$.failed.length()").value(1))
+            .andExpect(jsonPath("$.failed[0].code").value("RESOURCE_NOT_FOUND"));
+        assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+
+        String cancel=json.writeValueAsString(Map.of("orderIds",List.of(legacyDraft.getId(),otherOrder.id())));
+        mvc.perform(post("/api/v1/orders/batch-cancel").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(cancel))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.succeeded.length()").value(1))
+            .andExpect(jsonPath("$.failed.length()").value(1))
+            .andExpect(jsonPath("$.failed[0].code").value("RESOURCE_NOT_FOUND"));
+        assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
+        assertThat(products.findById(secondProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(4);
     }
 
     @Test void productImagePresignUploadAndConfirmBindsThePrivateObject() throws Exception {
@@ -195,9 +251,8 @@ class InventoryArtIntegrationTest {
         OrderDtos.Request request=new OrderDtos.Request(
             List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),
             SalesChannel.EXHIBITION,null,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
-        var draft=orderService.create(f.tenant.getId(),f.user.getId(),request);
-        var confirmed=orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id());
-        orderService.refund(f.tenant.getId(),f.user.getId(),draft.id(),
+        var confirmed=orderService.create(f.tenant.getId(),f.user.getId(),request);
+        orderService.refund(f.tenant.getId(),f.user.getId(),confirmed.id(),
             new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
 
         mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
@@ -222,6 +277,7 @@ class InventoryArtIntegrationTest {
 
     private Fixture fixture(String prefix){String nonce=UUID.randomUUID().toString().substring(0,8);Tenant t=tenants.save(new Tenant(UUID.randomUUID(),prefix+nonce,prefix+"-"+nonce,"EUR","Europe/Paris","zh-CN"));User u=users.save(new User(UUID.randomUUID(),t.getId(),prefix+nonce,prefix+nonce+"@test.local",passwords.encode("ValidPassword123!"),prefix,UserRole.USER));return new Fixture(t,u);}
     private Product product(Fixture f,String sku,int stock){Product p=products.save(new Product(UUID.randomUUID(),f.tenant.getId(),sku+UUID.randomUUID().toString().substring(0,4),"Product","Test",null,null,new BigDecimal("2.00"),new BigDecimal("10.00"),"EUR",2));inventory.apply(f.tenant.getId(),p.getId(),stock,MovementType.INITIAL,null,null,"test",null,f.user.getId());return p;}
+    private SalesOrder draft(Fixture f,Product product,int quantity){UUID id=UUID.randomUUID();BigDecimal total=new BigDecimal("10.00").multiply(BigDecimal.valueOf(quantity));SalesOrder order=new SalesOrder(id,f.tenant.getId(),"LEGACY-"+id.toString().substring(0,8),OrderSource.MANUAL,OrderStatus.DRAFT,AllocationStatus.FULLY_ALLOCATED,SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now(),f.user.getId());order.setAmounts(total,BigDecimal.ZERO,BigDecimal.ZERO,total,BigDecimal.ZERO);orders.saveAndFlush(order);orderItems.saveAndFlush(new OrderItem(f.tenant.getId(),id,product.getId(),product.getSku(),product.getName(),new BigDecimal("10.00"),quantity,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,total));return order;}
     private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor userJwt(Fixture f){return jwt().jwt(j->j.subject(f.user.getId().toString()).claim("username",f.user.getUsername()).claim("role","USER").claim("tenantId",f.tenant.getId().toString()));}
     private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor adminJwt(User admin){return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")).jwt(j->j.subject(admin.getId().toString()).claim("username",admin.getUsername()).claim("role","ADMIN"));}
     record Fixture(Tenant tenant,User user){}

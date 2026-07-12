@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import type { AdminTenant, PageResponse, SupportedLocale, UserProfile } from '@/types/api'
@@ -12,15 +14,21 @@ import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
 
 const { t } = useI18n()
+const router = useRouter()
+const auth = useAuthStore()
 const { showError } = useApiFeedback()
 const page = ref<PageResponse<UserProfile>>(normalizePage([]))
 const tenants = ref<AdminTenant[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const resetSaving = ref(false)
 const dialogOpen = ref(false)
+const resetDialogOpen = ref(false)
+const resetTarget = ref<UserProfile>()
 const currentPage = ref(1)
 const tenantFilter = ref('')
 const form = reactive({ tenantId: '', username: '', email: '', password: '', displayName: '', role: 'USER' as 'USER' | 'ADMIN', preferredLocale: 'en' as SupportedLocale })
+const resetForm = reactive({ password: '', confirmPassword: '' })
 function tenantName(id?: string) { return tenants.value.find((tenant) => tenant.id === id)?.name || (id ? id.slice(0, 8) : '—') }
 async function load() {
   loading.value = true
@@ -41,6 +49,27 @@ async function toggle(user: UserProfile) {
   try { await api.post(`/admin/users/${user.id}/enabled`, { enabled: next }); user.enabled = next; ElMessage.success(t('admin.saved')) }
   catch (error) { showError(error) }
 }
+function openReset(user: UserProfile) {
+  resetTarget.value = user
+  Object.assign(resetForm, { password: '', confirmPassword: '' })
+  resetDialogOpen.value = true
+}
+async function resetPassword() {
+  if (!resetTarget.value || resetForm.password.length < 10 || resetForm.password !== resetForm.confirmPassword) {
+    ElMessage.warning(t(resetForm.password !== resetForm.confirmPassword ? 'profile.passwordMismatch' : 'errors.validation'))
+    return
+  }
+  resetSaving.value = true
+  try {
+    await api.post(`/admin/users/${resetTarget.value.id}/reset-password`, { password: resetForm.password })
+    resetDialogOpen.value = false
+    ElMessage.success(t('admin.passwordReset'))
+    if (resetTarget.value.id === auth.user?.id) {
+      auth.invalidateLocalSession()
+      await router.replace({ name: 'login' })
+    }
+  } catch (error) { showError(error) } finally { resetSaving.value = false }
+}
 onMounted(load)
 </script>
 
@@ -56,6 +85,7 @@ onMounted(load)
         <ElTableColumn :label="t('common.role')" width="120"><template #default="scope"><StatusPill :status="scope.row.role" /></template></ElTableColumn>
         <ElTableColumn prop="preferredLocale" :label="t('admin.preferredLanguage')" width="150" />
         <ElTableColumn :label="t('common.status')" width="130"><template #default="scope"><ElSwitch :model-value="scope.row.enabled ?? true" :active-text="t('common.enabled')" :inactive-text="t('common.disabled')" @change="toggle(scope.row)" /></template></ElTableColumn>
+        <ElTableColumn :label="t('common.actions')" width="150" fixed="right"><template #default="scope"><ElButton text @click="openReset(scope.row)">{{ t('admin.resetPassword') }}</ElButton></template></ElTableColumn>
       </ElTable>
       <EmptyState v-else :title="t('common.noData')" :body="t('admin.usersSubtitle')"><ElButton type="primary" :icon="Plus" @click="openCreate">{{ t('admin.addUser') }}</ElButton></EmptyState>
       <ElPagination v-if="page.totalPages > 1" v-model:current-page="currentPage" class="table-pagination" background layout="prev, pager, next" :page-size="20" :total="page.totalElements" @current-change="load" />
@@ -63,6 +93,14 @@ onMounted(load)
     <ElDialog v-model="dialogOpen" :title="t('admin.addUser')" width="min(680px, 94vw)">
       <ElForm label-position="top" class="form-grid"><ElFormItem :label="t('admin.username')" required><ElInput v-model="form.username" autocomplete="off" /></ElFormItem><ElFormItem :label="t('common.email')" required><ElInput v-model="form.email" type="email" autocomplete="off" /></ElFormItem><ElFormItem :label="t('admin.displayName')" required><ElInput v-model="form.displayName" /></ElFormItem><ElFormItem :label="t('admin.temporaryPassword')" required><ElInput v-model="form.password" type="password" show-password autocomplete="new-password" /><small class="field-hint">{{ t('validation.passwordLength') }}</small></ElFormItem><ElFormItem :label="t('common.role')"><ElSelect v-model="form.role"><ElOption label="USER" value="USER" /><ElOption label="ADMIN" value="ADMIN" /></ElSelect></ElFormItem><ElFormItem v-if="form.role === 'USER'" :label="t('common.tenant')" required><ElSelect v-model="form.tenantId" filterable><ElOption v-for="tenant in tenants" :key="tenant.id" :label="tenant.name" :value="tenant.id" /></ElSelect></ElFormItem><ElFormItem :label="t('admin.preferredLanguage')"><ElSelect v-model="form.preferredLocale"><ElOption :label="t('profile.english')" value="en" /><ElOption :label="t('profile.chinese')" value="zh-CN" /><ElOption :label="t('profile.french')" value="fr-FR" /></ElSelect></ElFormItem></ElForm>
       <template #footer><ElButton @click="dialogOpen = false">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="saving" @click="createUser">{{ saving ? t('common.saving') : t('common.create') }}</ElButton></template>
+    </ElDialog>
+    <ElDialog v-model="resetDialogOpen" :title="t('admin.resetPassword')" width="min(480px, 94vw)">
+      <p>{{ t('admin.resetPasswordFor', { name: resetTarget?.displayName || resetTarget?.username }) }}</p>
+      <ElForm label-position="top">
+        <ElFormItem :label="t('profile.newPassword')" required><ElInput v-model="resetForm.password" type="password" show-password autocomplete="new-password" /><small class="field-hint">{{ t('validation.passwordLength') }}</small></ElFormItem>
+        <ElFormItem :label="t('profile.confirmPassword')" required><ElInput v-model="resetForm.confirmPassword" type="password" show-password autocomplete="new-password" /></ElFormItem>
+      </ElForm>
+      <template #footer><ElButton @click="resetDialogOpen = false">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="resetSaving" @click="resetPassword">{{ t('admin.resetPassword') }}</ElButton></template>
     </ElDialog>
   </div>
 </template>

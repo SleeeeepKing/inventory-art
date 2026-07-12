@@ -79,11 +79,33 @@ api.interceptors.response.use(
 )
 
 export function apiErrorCode(error: unknown): string {
-  if (axios.isAxiosError<ApiError>(error)) return error.response?.data?.code || 'UNKNOWN'
-  return 'UNKNOWN'
+  return parseApiError(error).code
 }
 
 export function apiFieldErrors(error: unknown): Record<string, string> {
-  if (axios.isAxiosError<ApiError>(error)) return error.response?.data?.fieldErrors || {}
-  return {}
+  return parseApiError(error).fieldErrors
+}
+
+export interface ParsedApiError {
+  code: string
+  status?: number
+  message?: string
+  fieldErrors: Record<string, string>
+  traceId?: string
+  networkError: boolean
+}
+
+export function parseApiError(error: unknown): ParsedApiError {
+  if (!axios.isAxiosError<ApiError>(error)) {
+    return { code: 'UNKNOWN', fieldErrors: {}, networkError: false }
+  }
+  const data = error.response?.data
+  return {
+    code: data?.code || 'UNKNOWN',
+    status: error.response?.status ?? data?.status,
+    message: data?.message,
+    fieldErrors: data?.fieldErrors || {},
+    traceId: data?.traceId,
+    networkError: !error.response,
+  }
 }

@@ -107,6 +107,7 @@ export interface Order {
   salesChannel?: string
   eventId?: string
   eventName?: string
+  inventoryApplied?: boolean
   customerName?: string
   customerEmail?: string
   currency: string
@@ -119,6 +120,18 @@ export interface Order {
   orderedAt?: string
   orderDate: string
   createdAt?: string
+}
+
+export interface OrderBatchFailure {
+  id: string
+  orderNumber?: string
+  code: string
+  message: string
+}
+
+export interface OrderBatchResponse {
+  succeeded: Array<{ id: string; orderNumber: string; status: string }>
+  failed: OrderBatchFailure[]
 }
 
 export interface SalesEvent {

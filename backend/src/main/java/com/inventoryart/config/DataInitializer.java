@@ -48,7 +48,7 @@ public class DataInitializer implements ApplicationRunner {
         User user=users.findByUsernameIgnoreCase(username).orElseGet(()->users.save(new User(UUID.randomUUID(),tenant.getId(),username,email,passwords.encode("User123!"),tenantName+" Owner",UserRole.USER)));
         Product product=products.findByTenantIdAndSkuIgnoreCase(tenant.getId(),sku).orElseGet(()->products.save(new Product(UUID.randomUUID(),tenant.getId(),sku,productName,"Demo","Demo Artist","Development seed product",new BigDecimal("3.00"),price,"EUR",3)));
         if(product.getCurrentStock()==0)inventory.apply(tenant.getId(),product.getId(),stock,MovementType.INITIAL,null,null,"Development seed",null,user.getId());
-        if(orderServiceOrderMissing(tenant.getId())){OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(product.getId(),1,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.EXHIBITION,null,"Demo Expo","Demo Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now().minusSeconds(86400));OrderDtos.Response order=orderService.create(tenant.getId(),user.getId(),req);orderService.confirm(tenant.getId(),user.getId(),order.id());}
+        if(orderServiceOrderMissing(tenant.getId())){OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(product.getId(),1,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.EXHIBITION,null,"Demo Expo","Demo Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now().minusSeconds(86400));orderService.create(tenant.getId(),user.getId(),req);}
         seedSumUp(tenant,user,slug,price);
     }
     private boolean orderServiceOrderMissing(UUID tenantId){return !orderRepository.existsByTenantId(tenantId);}

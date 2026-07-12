@@ -27,6 +27,11 @@ export const useAuthStore = defineStore('auth', () => {
     setAppLocale('en')
   }
 
+  function invalidateLocalSession() {
+    clearSession()
+    initialized.value = true
+  }
+
   configureSessionHandlers({ updated: applySession, expired: clearSession })
 
   async function initialize() {
@@ -87,5 +92,6 @@ export const useAuthStore = defineStore('auth', () => {
     updateProfile,
     applySession,
     clearSession,
+    invalidateLocalSession,
   }
 })

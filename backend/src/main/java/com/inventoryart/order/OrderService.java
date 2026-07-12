@@ -29,7 +29,9 @@ public class OrderService {
     @Transactional public OrderDtos.Response create(UUID tenant,UUID user,OrderDtos.Request request){
         EventSelection event=event(tenant,request);
         SalesOrder order=orders.save(new SalesOrder(UUID.randomUUID(),tenant,number(),OrderSource.MANUAL,OrderStatus.DRAFT,AllocationStatus.FULLY_ALLOCATED,event.channel(),event.id(),event.name(),request.customerName(),request.customerEmail(),request.customerNote(),request.currency().toUpperCase(),request.paymentMethod(),request.paymentStatus(),request.orderDate(),user));
-        List<OrderItem> built=buildItems(tenant,order.getId(),request);items.saveAll(built);setTotals(order,built);return response(order,built);
+        List<OrderItem> built=buildItems(tenant,order.getId(),request);items.saveAll(built);setTotals(order,built);
+        applyAggregated(tenant,user,order,built,-1,MovementType.SALE);order.confirmed();recordManualPaymentIfPaid(order);
+        return response(order,built);
     }
     @Transactional public OrderDtos.Response update(UUID tenant,UUID user,UUID id,OrderDtos.Request request){
         SalesOrder order=orders.findLocked(id,tenant).orElseThrow(()->new NotFoundException("Order"));
