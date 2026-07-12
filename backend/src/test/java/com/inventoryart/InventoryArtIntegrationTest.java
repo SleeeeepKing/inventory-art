@@ -22,6 +22,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -64,6 +66,12 @@ class InventoryArtIntegrationTest {
         Fixture f=fixture("api-defaults");product(f,"SEARCH-DEFAULT",3);
         mvc.perform(get("/api/v1/products").with(userJwt(f)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].sku").exists());
+        mvc.perform(get("/api/v1/orders").with(userJwt(f)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.items").isArray());
+        mvc.perform(get("/api/v1/inventory/movements").with(userJwt(f)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].type").value("INITIAL"));
+        mvc.perform(get("/api/v1/external-transactions").with(userJwt(f)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.items").isArray());
         mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.timezone").value("Europe/Paris"));
     }
@@ -84,9 +92,29 @@ class InventoryArtIntegrationTest {
         assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id())).hasMessageContaining("Insufficient");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);
     }
 
+    @Test void productImagePresignUploadAndConfirmBindsThePrivateObject() throws Exception {
+        Fixture f=fixture("image");Product p=product(f,"IMAGE",2);
+        byte[] image="synthetic-png-test-content".getBytes(StandardCharsets.UTF_8);
+        String checksum=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(image));
+        String request=json.writeValueAsString(Map.of("originalFilename","test.png","contentType","image/png",
+            "size",image.length,"checksumSha256",checksum,"productId",p.getId()));
+        String presign=mvc.perform(post("/api/v1/files/presign").with(userJwt(f)).contentType(MediaType.APPLICATION_JSON).content(request))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        URI upload=URI.create(json.readTree(presign).get("uploadUrl").asText());
+        UUID fileId=UUID.fromString(json.readTree(presign).get("fileId").asText());
+        mvc.perform(put(upload).contentType("image/png").header("X-Content-Sha256",checksum).content(image))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/files/{id}/confirm",fileId).with(userJwt(f)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CONFIRMED"));
+        mvc.perform(get("/api/v1/products/{id}",p.getId()).with(userJwt(f)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").isString());
+    }
+
     @Test void adminCanReadTenantsAndCreatesAudit() throws Exception {
         Fixture f=fixture("admin-target");User admin=users.save(new User(UUID.randomUUID(),null,"admin-"+UUID.randomUUID(),"admin-"+UUID.randomUUID()+"@test.local",passwords.encode("ValidPassword123!"),"Admin",UserRole.ADMIN));
-        mvc.perform(get("/api/v1/admin/tenants/{id}",f.tenant.getId()).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")).jwt(j->j.subject(admin.getId().toString()).claim("username",admin.getUsername()).claim("role","ADMIN")))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/admin/tenants/{id}",f.tenant.getId()).with(adminJwt(admin))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/admin/reports/dashboard").with(adminJwt(admin)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.defaultCurrency").value("MULTI"));
         assertThat(audits.findAll()).anyMatch(a->a.getAction().equals("ADMIN_TENANT_READ")&&f.tenant.getId().equals(a.getTenantId()));
     }
 
@@ -110,5 +138,6 @@ class InventoryArtIntegrationTest {
     private Fixture fixture(String prefix){String nonce=UUID.randomUUID().toString().substring(0,8);Tenant t=tenants.save(new Tenant(UUID.randomUUID(),prefix+nonce,prefix+"-"+nonce,"EUR","Europe/Paris","zh-CN"));User u=users.save(new User(UUID.randomUUID(),t.getId(),prefix+nonce,prefix+nonce+"@test.local",passwords.encode("ValidPassword123!"),prefix,UserRole.USER));return new Fixture(t,u);}
     private Product product(Fixture f,String sku,int stock){Product p=products.save(new Product(UUID.randomUUID(),f.tenant.getId(),sku+UUID.randomUUID().toString().substring(0,4),"Product","Test",null,null,new BigDecimal("2.00"),new BigDecimal("10.00"),"EUR",2));inventory.apply(f.tenant.getId(),p.getId(),stock,MovementType.INITIAL,null,null,"test",null,f.user.getId());return p;}
     private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor userJwt(Fixture f){return jwt().jwt(j->j.subject(f.user.getId().toString()).claim("username",f.user.getUsername()).claim("role","USER").claim("tenantId",f.tenant.getId().toString()));}
+    private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor adminJwt(User admin){return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")).jwt(j->j.subject(admin.getId().toString()).claim("username",admin.getUsername()).claim("role","ADMIN"));}
     record Fixture(Tenant tenant,User user){}
 }

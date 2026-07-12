@@ -28,11 +28,12 @@ public class AppProperties {
         public boolean isCookieSecure() { return cookieSecure; } public void setCookieSecure(boolean value) { cookieSecure = value; }
     }
     public static class Storage {
-        private String provider; private String localPath; private String endpoint; private String region; private String accessKey;
+        private String provider; private String localPath; private String endpoint; private String publicEndpoint; private String region; private String accessKey;
         private String secretKey; private String bucket; private long presignedExpirationSeconds = 900;
         public String getProvider() { return provider; } public void setProvider(String v) { provider=v; }
         public String getLocalPath() { return localPath; } public void setLocalPath(String v) { localPath=v; }
         public String getEndpoint() { return endpoint; } public void setEndpoint(String v) { endpoint=v; }
+        public String getPublicEndpoint() { return publicEndpoint; } public void setPublicEndpoint(String v) { publicEndpoint=v; }
         public String getRegion() { return region; } public void setRegion(String v) { region=v; }
         public String getAccessKey() { return accessKey; } public void setAccessKey(String v) { accessKey=v; }
         public String getSecretKey() { return secretKey; } public void setSecretKey(String v) { secretKey=v; }

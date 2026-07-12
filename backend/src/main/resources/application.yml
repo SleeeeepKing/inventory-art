@@ -9,7 +9,7 @@ spring:
     username: ${DATABASE_USERNAME:inventory}
     password: ${DATABASE_PASSWORD:inventory_dev_password}
     hikari:
-      maximum-pool-size: ${DATABASE_POOL_SIZE:5}
+      maximum-pool-size: ${DATABASE_POOL_SIZE:3}
   jpa:
     open-in-view: false
     hibernate:
@@ -53,6 +53,7 @@ app:
     provider: ${STORAGE_PROVIDER:local}
     local-path: ${LOCAL_STORAGE_PATH:./storage-data}
     endpoint: ${R2_ENDPOINT:}
+    public-endpoint: ${R2_PUBLIC_ENDPOINT:}
     region: ${R2_REGION:auto}
     access-key: ${R2_ACCESS_KEY_ID:}
     secret-key: ${R2_SECRET_ACCESS_KEY:}

@@ -151,4 +151,4 @@ COMPLETED / COMPLETED_WITH_ERRORS → REVERSED
 
 ## 扩展边界
 
-当前架构保留但不提前实现以下扩展：一个 Tenant 多成员、套餐/订阅、汇率服务、独立任务 Worker、SumUp API provider 和更细粒度角色。拆分服务前应优先通过模块边界、索引、批处理和后台任务扩展单体；只有独立扩缩容或故障域产生实际需求时才拆分。
+当前 ADMIN 可以把多个 USER 分配到同一个 Tenant。架构保留但不提前实现以下扩展：自助成员邀请、Tenant 内细粒度角色、套餐/订阅、汇率服务、独立任务 Worker 和 SumUp API provider。拆分服务前应优先通过模块边界、索引和受限批处理扩展单体；只有独立扩缩容或故障域产生实际需求时才拆分。

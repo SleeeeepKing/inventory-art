@@ -5,13 +5,20 @@ import { useI18n } from 'vue-i18n'
 import { ArrowRight, Lock, Message, TrendCharts } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useApiFeedback } from '@/composables/useApiFeedback'
+import { setAppLocale } from '@/i18n'
+import type { SupportedLocale } from '@/types/api'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { showError } = useApiFeedback()
 const form = reactive({ username: '', password: '' })
+const languages: Array<{ value: SupportedLocale; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'fr-FR', label: 'Français' },
+]
 
 async function submit() {
   try {
@@ -38,6 +45,18 @@ async function submit() {
     </section>
     <section class="login-panel">
       <div class="login-form-wrap">
+        <div class="login-languages" :aria-label="t('profile.language')">
+          <button
+            v-for="language in languages"
+            :key="language.value"
+            type="button"
+            :aria-pressed="locale === language.value"
+            :class="{ active: locale === language.value }"
+            @click="setAppLocale(language.value)"
+          >
+            {{ language.label }}
+          </button>
+        </div>
         <p class="eyebrow">{{ t('auth.signIn') }}</p>
         <h2>{{ t('auth.welcome') }}</h2>
         <p>{{ t('auth.instruction') }}</p>

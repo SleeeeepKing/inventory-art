@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import jakarta.validation.Valid;
+import static com.inventoryart.common.QueryTimeBounds.from;
+import static com.inventoryart.common.QueryTimeBounds.to;
 
 @RestController
 @RequestMapping("/api/v1/external-transactions")
@@ -40,7 +42,7 @@ public class ExternalTransactionController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
         Pageable pageable) {
-        return PageResponse.of(transactions.search(currentUser.tenantId(), status, from, to, pageable)
+        return PageResponse.of(transactions.search(currentUser.tenantId(), status, from(from), to(to), pageable)
             .map(ExternalTransactionDtos.Response::from));
     }
 

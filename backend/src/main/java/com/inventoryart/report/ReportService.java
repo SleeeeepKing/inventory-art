@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -54,7 +55,7 @@ public class ReportService {
         Instant from = start.atStartOfDay(settings.zone()).toInstant();
         Instant to = end.plusDays(1).atStartOfDay(settings.zone()).toInstant();
         MapSqlParameterSource params = new MapSqlParameterSource()
-            .addValue("tenantId", tenantId == null ? null : tenantId.toString())
+            .addValue("tenantId", tenantId == null ? null : tenantId.toString(), Types.VARCHAR)
             .addValue("from", Timestamp.from(from)).addValue("to", Timestamp.from(to))
             .addValue("timezone", settings.zone().getId());
 

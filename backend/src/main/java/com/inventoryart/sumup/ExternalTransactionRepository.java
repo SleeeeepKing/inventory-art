@@ -15,8 +15,8 @@ interface ExternalTransactionRepository extends JpaRepository<ExternalTransactio
         select e from ExternalTransaction e
         where e.tenantId = :tenantId
           and (:status is null or e.transactionStatus = :status)
-          and (:from is null or e.occurredAt >= :from)
-          and (:to is null or e.occurredAt < :to)
+          and e.occurredAt >= :from
+          and e.occurredAt < :to
           and e.active = true
         """)
     Page<ExternalTransaction> search(@Param("tenantId") UUID tenantId,
@@ -29,8 +29,8 @@ interface ExternalTransactionRepository extends JpaRepository<ExternalTransactio
         select e from ExternalTransaction e
         where (:tenantId is null or e.tenantId = :tenantId)
           and (:status is null or e.transactionStatus = :status)
-          and (:from is null or e.occurredAt >= :from)
-          and (:to is null or e.occurredAt < :to)
+          and e.occurredAt >= :from
+          and e.occurredAt < :to
         """)
     Page<ExternalTransaction> adminSearch(@Param("tenantId") UUID tenantId,
                                           @Param("status") String status,

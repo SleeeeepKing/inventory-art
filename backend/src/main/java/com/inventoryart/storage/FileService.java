@@ -6,6 +6,7 @@ import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
 import com.inventoryart.security.CurrentUserService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ import java.io.OutputStream;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Timestamp;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -82,7 +84,7 @@ public class FileService {
         if (actual.size() != file.getSize()) {
             throw new BusinessException("FILE_SIZE_MISMATCH", "Uploaded file size does not match the presigned request");
         }
-        if (actual.contentType() == null || !actual.contentType().equalsIgnoreCase(file.getContentType())) {
+        if (!sameContentType(actual.contentType(), file.getContentType())) {
             throw new BusinessException("FILE_CONTENT_TYPE_MISMATCH", "Uploaded file type does not match the presigned request");
         }
         if (!actualChecksum(file.getObjectKey()).equalsIgnoreCase(file.getChecksum())) {
@@ -96,7 +98,7 @@ public class FileService {
             int updated = jdbc.update("""
                 update products set image_object_key = ?, updated_at = ?
                 where tenant_id = ? and id = ?
-                """, file.getObjectKey(), now, file.getTenantId(), file.getResourceId());
+                """, file.getObjectKey(), Timestamp.from(now), file.getTenantId(), file.getResourceId());
             if (updated != 1) throw new NotFoundException("Product");
             if (previousKey != null && !previousKey.equals(file.getObjectKey())) {
                 repository.findByObjectKeyAndTenantId(previousKey, file.getTenantId()).ifPresent(previous -> {
@@ -163,11 +165,11 @@ public class FileService {
         if (file.getStatus() != StoredFile.Status.PENDING) {
             throw new BusinessException("FILE_NOT_PENDING", "Only pending files can be uploaded", HttpStatus.CONFLICT);
         }
-        if (contentLength != file.getSize() || !file.getContentType().equalsIgnoreCase(contentType)
+        if (contentLength != file.getSize() || !sameContentType(file.getContentType(), contentType)
             || checksum == null || !file.getChecksum().equalsIgnoreCase(checksum)) {
             throw new BusinessException("UPLOAD_CONSTRAINT_MISMATCH", "Upload headers do not match the presigned request");
         }
-        storage.put(objectKey, input, contentLength, contentType, Map.of("sha256", checksum));
+        storage.put(objectKey, input, contentLength, file.getContentType(), Map.of("sha256", checksum));
     }
 
     StoredFile localDownloadFile(String objectKey, long expires, String signature) {
@@ -194,6 +196,18 @@ public class FileService {
         }
         if (size <= 0 || size > MAX_IMAGE_SIZE) {
             throw new BusinessException("IMAGE_TOO_LARGE", "Image must be no larger than 10 MB");
+        }
+    }
+
+    private static boolean sameContentType(String first, String second) {
+        if (first == null || second == null) return false;
+        try {
+            MediaType left = MediaType.parseMediaType(first);
+            MediaType right = MediaType.parseMediaType(second);
+            return left.getType().equalsIgnoreCase(right.getType())
+                && left.getSubtype().equalsIgnoreCase(right.getSubtype());
+        } catch (IllegalArgumentException exception) {
+            return false;
         }
     }
 

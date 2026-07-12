@@ -31,7 +31,7 @@ Inventory Art 是一个面向个人创作者、小型展会摊主和周边商品
 └── .env.example             本地环境变量模板（不含真实密钥）
 ```
 
-详细设计见 [架构](docs/architecture.md)、[数据库](docs/database-schema.md)、[安全与租户隔离](docs/security-and-tenancy.md)、[SumUp 导入](docs/sumup-import.md)、[部署](docs/deployment.md) 和 [R2 存储](docs/r2-storage.md)。
+详细设计见 [架构](docs/architecture.md)、[数据库](docs/database-schema.md)、[安全与租户隔离](docs/security-and-tenancy.md)、[账号初始化](docs/account-bootstrap.md)、[SumUp 导入](docs/sumup-import.md)、[部署](docs/deployment.md) 和 [R2 存储](docs/r2-storage.md)。
 
 ## 本地快速启动
 
@@ -49,6 +49,8 @@ Inventory Art 是一个面向个人创作者、小型展会摊主和周边商品
 cp .env.example .env
 docker compose up --build
 ```
+
+Compose 默认把后端限制在 512 MB，以便本地尽早暴露与 Railway 小实例相同的内存问题；需要调试分析器时可临时通过 `BACKEND_MEMORY_LIMIT` 覆盖。
 
 服务启动后：
 
@@ -94,7 +96,7 @@ npm ci
 npm run dev
 ```
 
-Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用 `local` 存储；若要改用 MinIO，同时设置 `STORAGE_PROVIDER=minio`、`R2_ENDPOINT=http://localhost:9000`、`R2_REGION=us-east-1` 以及本地 MinIO 的 access key、secret 和 bucket。Compose 内后端则使用 `http://minio:9000`。
+Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用 `local` 存储；若要改用 MinIO，同时设置 `STORAGE_PROVIDER=minio`、`R2_ENDPOINT=http://localhost:9000`、`R2_REGION=us-east-1` 以及本地 MinIO 的 access key、secret 和 bucket。Compose 内后端使用可从容器和宿主浏览器解析的 `http://minio.localhost:9000`。
 
 ## 开发演示账号
 
@@ -118,7 +120,7 @@ Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用
 | `SPRING_PROFILES_ACTIVE` | Spring profile | `dev`（仅本地） |
 | `DATABASE_URL` | JDBC PostgreSQL URL | `jdbc:postgresql://localhost:5432/inventory_art` |
 | `DATABASE_USERNAME` / `DATABASE_PASSWORD` | 数据库凭据 | `inventory` / 本地密码 |
-| `DATABASE_POOL_SIZE` | Hikari 最大连接数 | `5` |
+| `DATABASE_POOL_SIZE` | Hikari 最大连接数 | `3` |
 | `JWT_SECRET` | JWT HMAC 密钥，生产使用高熵随机值 | 无安全默认值 |
 | `JWT_ACCESS_TOKEN_MINUTES` | Access Token 有效期 | `15` |
 | `JWT_REFRESH_TOKEN_DAYS` | Refresh Token 有效期 | `30` |
@@ -126,7 +128,8 @@ Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用
 | `COOKIE_SECURE` | Refresh Cookie 是否只允许 HTTPS | 本地 `false`；生产 `true` |
 | `STORAGE_PROVIDER` | `local`、`minio` 或 `r2` | Compose 为 `minio` |
 | `LOCAL_STORAGE_PATH` | 仅本地文件存储根目录 | `./storage-data` |
-| `R2_ENDPOINT` | R2/MinIO S3 endpoint | Compose 为 `http://minio:9000` |
+| `R2_ENDPOINT` | R2/MinIO S3 endpoint | Compose 为 `http://minio.localhost:9000` |
+| `R2_PUBLIC_ENDPOINT` | 可选的浏览器预签名 URL endpoint；未设置时沿用 `R2_ENDPOINT` | Compose 为 `http://minio.localhost:9000` |
 | `R2_REGION` | S3-compatible region | R2 为 `auto` |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | 私有 Bucket API 凭据 | MinIO 本地凭据 |
 | `R2_BUCKET_PRIVATE` | 私有对象 Bucket | `inventory-art` |
@@ -195,13 +198,13 @@ GitHub Actions 在 Java 21 和 Node 24 上执行同样的测试与构建。不�
 3. 检查并修正列映射，预览标准化数据和错误。
 4. 映射外部商品；匹配顺序为已保存映射、Reference/SKU、规范化名称、手动映射、未分配。
 5. 查看新增、更新、重复、错误和库存影响，携带当前分析版本明确确认。
-6. 后端按事务批次执行幂等导入；完成后可查看错误 CSV，满足条件的批次可以通过反向流水撤销。
+6. 后端在行数上限保护的事务中执行幂等导入；完成后可查看错误 CSV，满足条件的批次可以通过反向流水撤销。
 
 文件 checksum 防止重复上传；交易优先按外部 ID 去重，无稳定 ID 时使用确定性 fingerprint。交易级、订单级、商品汇总和会计汇总的处理方式不同，详见 [SumUp 导入规范](docs/sumup-import.md)。
 
 ## 生产部署摘要
 
-1. 在 Neon Frankfurt 创建 PostgreSQL 数据库，使用强制 TLS 的 JDBC URL，并限制初始连接池为 5。
+1. 在 Neon Frankfurt 创建 PostgreSQL 数据库，使用强制 TLS 的 JDBC URL，并限制初始连接池为 3。
 2. 在 Cloudflare R2 创建私有 Bucket 和仅限该 Bucket 的读写凭据，配置浏览器 PUT/GET 所需 CORS。
 3. 在 Railway 从本仓库创建后端服务，使用 `backend/Dockerfile`、配置环境变量，并将健康检查设为 `/actuator/health`。
 4. 在 Cloudflare Pages 连接同一 GitHub 仓库；Root directory 为 `frontend`，命令 `npm run build`，输出 `dist`，设置 `VITE_API_BASE_URL`。
@@ -211,14 +214,13 @@ GitHub Actions 在 Java 21 和 Node 24 上执行同样的测试与构建。不�
 
 ## 已知限制
 
-- MVP 不提供公开注册、订阅计费、套餐限制或多成员 Tenant 管理。
+- MVP 不提供公开注册、订阅计费、套餐限制、自助邀请流程或 Tenant 内细粒度角色；ADMIN 可把多个 USER 分配到同一 Tenant。
 - 不实现汇率换算；不同币种分组展示，不能直接相加。
 - 仅支持用户上传 SumUp 导出文件；不调用 SumUp API，不实现 Checkout 或刷卡机控制。
 - 商品汇总与会计汇总默认只用于对账；商品汇总调整库存需要额外确认。
 - 多租户隔离由应用认证上下文、Tenant-aware 查询、数据库组合约束和测试共同保证；当前不启用 PostgreSQL RLS。
 - 浏览器上传总上限默认 20 MB，单文件最多 20,000 行；XLSX 使用 SAX 流式读取，旧版 XLS 因格式限制默认最多 5 MB。
-- Railway 512 MB 部署使用 256 MB heap、有界异步队列、最多 3 个数据库连接和 200 行批处理；不要在生产环境移除这些限制。
+- Railway 512 MB 部署使用 192 MB heap、16 个请求线程、有界异步队列、最多 3 个数据库连接和 200 行批处理；不要在生产环境移除这些限制。
 - R2 与 MinIO 提供的是 S3-compatible 存储；系统不部署或依赖任何 AWS 服务。
 - 当前为模块化单体；导入状态持久化在数据库中并支持幂等重试，不拆分为独立微服务或任务 Worker。
 - 正式导入为保证业务原子性会在一个数据库事务中确认，当前用 20,000 行上限控制事务规模；超大文件应先拆分。
-# inventory-art

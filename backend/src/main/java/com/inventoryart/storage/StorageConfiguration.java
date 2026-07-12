@@ -35,7 +35,9 @@ public class StorageConfiguration {
         if (storage.getEndpoint() != null && !storage.getEndpoint().isBlank()) {
             URI endpoint = URI.create(storage.getEndpoint());
             clientBuilder.endpointOverride(endpoint);
-            presignerBuilder.endpointOverride(endpoint);
+            URI publicEndpoint = storage.getPublicEndpoint() == null || storage.getPublicEndpoint().isBlank()
+                ? endpoint : URI.create(storage.getPublicEndpoint());
+            presignerBuilder.endpointOverride(publicEndpoint);
         }
         return new S3CompatibleStorageService(clientBuilder.build(), presignerBuilder.build(), storage.getBucket());
     }

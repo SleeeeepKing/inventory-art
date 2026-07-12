@@ -35,7 +35,7 @@ Testcontainers 和 Compose 都要求 Docker daemon 已启动。不要通过 `-Ds
 
 1. 在 Neon 创建 Project，Region 选择 Europe / AWS Frankfurt（控制台实际名称可能包含 `eu-central-1`）。
 2. 创建专用生产数据库和应用角色，不复用个人管理员账号。
-3. 在 Connect 页面复制连接信息。当前应用同时由 Flyway 和 Hikari 使用同一 URL，优先使用 direct hostname，并把 Hikari 最大池保持为 5；这避免 transaction pool 对 migration/session 行为的限制。
+3. 在 Connect 页面复制连接信息。当前应用同时由 Flyway 和 Hikari 使用同一 URL，优先使用 direct hostname，并把 Hikari 最大池保持为 3；这避免 transaction pool 对 migration/session 行为的限制。
 4. 将 PostgreSQL URI 转为 JDBC URL，至少强制 TLS：
 
    ```text
@@ -67,6 +67,8 @@ Testcontainers 和 Compose 都要求 Docker daemon 已启动。不要通过 `-Ds
    ```text
    STORAGE_PROVIDER=r2
    R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+   # 仅当浏览器访问地址与容器内部 endpoint 不同时设置：
+   R2_PUBLIC_ENDPOINT=https://<PUBLIC_OBJECT_ENDPOINT>
    R2_REGION=auto
    R2_ACCESS_KEY_ID=<secret>
    R2_SECRET_ACCESS_KEY=<secret>
@@ -109,6 +111,8 @@ CORS_ALLOWED_ORIGINS=https://app.example.com
 
 STORAGE_PROVIDER=r2
 R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+# 通常留空并沿用 R2_ENDPOINT；仅在内外 endpoint 不同时设置
+R2_PUBLIC_ENDPOINT=
 R2_REGION=auto
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
@@ -119,11 +123,12 @@ IMPORT_MAX_FILE_SIZE=20MB
 IMPORT_MAX_BYTES=20971520
 IMPORT_BATCH_SIZE=200
 IMPORT_MAX_ROWS=20000
+IMPORT_XLS_MAX_BYTES=5242880
 APP_SEED_ENABLED=false
-JAVA_TOOL_OPTIONS=-Xms64m -Xmx256m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=24m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+JAVA_TOOL_OPTIONS=-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
 ```
 
-Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 256 MB、Metaspace 最大 128 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 24 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 额外通过 `IMPORT_XLS_MAX_BYTES=5242880` 限制为 5 MB，避免 XLSX/CSV、Hibernate 批处理和并发请求同时把内存推到容器上限。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
+Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 192 MB、Metaspace 最大 112 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 16 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 额外通过 `IMPORT_XLS_MAX_BYTES=5242880` 限制为 5 MB，避免 XLSX/CSV、Hibernate 批处理和并发请求同时把内存推到容器上限。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
 
 首次创建管理员时，通过 Railway Secret 临时设置：
 

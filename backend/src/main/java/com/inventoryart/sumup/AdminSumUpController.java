@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import static com.inventoryart.common.QueryTimeBounds.from;
+import static com.inventoryart.common.QueryTimeBounds.to;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -46,7 +48,7 @@ public class AdminSumUpController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size) {
-        var result = transactions.adminSearch(tenantId, status, from, to,
+        var result = transactions.adminSearch(tenantId, status, from(from), to(to),
             PageRequest.of(Math.max(0, page), pageSize(size), Sort.by(Sort.Direction.DESC, "occurredAt")))
             .map(ExternalTransactionDtos.Response::from);
         audit.record(tenantId, "ADMIN_EXTERNAL_TRANSACTION_LIST", "EXTERNAL_TRANSACTION", null, "SUCCESS",

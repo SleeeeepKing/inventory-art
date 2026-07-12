@@ -158,6 +158,10 @@ body.nav-open { overflow: hidden; }
 .login-story__foot svg { width: 17px; }
 .login-panel { display: grid; min-height: 100vh; place-items: center; padding: 42px; }
 .login-form-wrap { width: min(430px, 100%); }
+.login-languages { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 26px; }
+.login-languages button { min-height: 44px; padding: 0 12px; border: 1px solid var(--ink-150); border-radius: 9px; background: #fff; color: var(--ink-600); font: 700 10px var(--utility); cursor: pointer; }
+.login-languages button.active { border-color: var(--coral); background: var(--coral-050); color: var(--ink-950); }
+.login-languages button:focus-visible { outline: 3px solid rgba(227, 104, 82, .22); outline-offset: 2px; }
 .login-form-wrap h2 { margin: 0; font-size: 37px; letter-spacing: -.045em; }
 .login-form-wrap > p:not(.eyebrow) { margin: 10px 0 32px; color: var(--ink-700); line-height: 1.6; }
 .login-submit { display: flex; width: 100%; margin-top: 8px; }

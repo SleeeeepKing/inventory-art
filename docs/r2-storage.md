@@ -156,14 +156,15 @@ Compose 内后端使用：
 
 ```text
 STORAGE_PROVIDER=minio
-R2_ENDPOINT=http://minio:9000
+R2_ENDPOINT=http://minio.localhost:9000
+R2_PUBLIC_ENDPOINT=http://minio.localhost:9000
 R2_REGION=us-east-1
 R2_ACCESS_KEY_ID=minioadmin
 R2_SECRET_ACCESS_KEY=minioadmin
 R2_BUCKET_PRIVATE=inventory-art
 ```
 
-从宿主机直接运行 Spring Boot 时 endpoint 改为 `http://localhost:9000`。这些是本地凭据，不能复制到生产。
+`minio.localhost` 在 Compose 网络中是 MinIO 的别名，在宿主浏览器中也解析到本机，因此预签名 URL 可以同时被后端和浏览器使用。自定义 Compose 映射端口时，保持内部 `R2_ENDPOINT` 不变，并把 `R2_PUBLIC_ENDPOINT` 设置为浏览器实际访问的端口。这些是本地凭据，不能复制到生产。
 
 启动：
 
