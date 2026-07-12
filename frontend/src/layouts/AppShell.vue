@@ -62,7 +62,7 @@ onBeforeUnmount(() => document.body.classList.remove('nav-open'))
 
 async function signOut() {
   await auth.logout()
-  await router.push('/login')
+  await router.replace('/login')
 }
 </script>
 

@@ -83,6 +83,7 @@ export const zhCN: MessageSchema = {
     signingIn: '正在登录…',
     secureSession: '采用轮换刷新令牌保护会话',
     loginFailed: '用户名或密码不正确。',
+    restoringSession: '正在检查安全会话…',
   },
   dashboard: {
     eyebrow: '数据概览',
@@ -330,10 +331,48 @@ export const zhCN: MessageSchema = {
     USER: '用户',
     ADMIN: '管理员',
   },
+  pwa: {
+    install: '安装应用',
+    showInstructions: '查看步骤',
+    later: '稍后',
+    updateNow: '立即更新',
+    updateTitle: '更新库存艺管？',
+    updateWarning: '应用将重新加载。更新前请先保存正在填写的表单。',
+    status: {
+      offline: {
+        title: '当前处于离线状态',
+        body: '应用外壳仍可打开，但业务数据和修改操作需要网络连接。',
+      },
+      update: {
+        title: '新版本已准备好',
+        body: '请先保存当前工作，再选择更新。',
+      },
+      backend: {
+        title: '正在连接服务器',
+        body: '长时间未使用后，安全服务可能需要一点时间启动。',
+        unavailable: '服务器启动时间超出预期，可以再次执行安全检查。',
+      },
+      ready: {
+        title: '应用外壳已可离线使用',
+        body: '界面文件已保存在本机，业务数据不会离线存储。',
+      },
+      install: {
+        title: '将库存艺管保留在此设备',
+        body: '安装后可以全屏、独立方式打开安全工作台。',
+      },
+    },
+    ios: {
+      title: '添加到主屏幕',
+      share: '打开浏览器的“分享”菜单。',
+      add: '选择“添加到主屏幕”。',
+      confirm: '确认名称，然后点击“添加”。',
+    },
+  },
   errors: {
     title: '需要处理',
     generic: '请求未能完成，请重试。',
     network: '无法连接服务，请检查网络后重试。',
+    writeOutcomeUnknown: '连接在结果确认前中断。再次提交前，请先刷新列表核对是否已生效。',
     forbidden: '你没有执行此操作的权限。',
     notFound: '页面不存在',
     notFoundBody: '页面可能已移动或被删除。',

@@ -62,4 +62,10 @@ describe('API error feedback', () => {
     showError({ isAxiosError: true, request: {} })
     expect(mocks.error).toHaveBeenCalledWith('errors.network')
   })
+
+  it('warns that a disconnected write may already have completed', () => {
+    const { showError } = useApiFeedback()
+    showError({ isAxiosError: true, request: {}, config: { method: 'post' } })
+    expect(mocks.error).toHaveBeenCalledWith('errors.writeOutcomeUnknown')
+  })
 })

@@ -83,6 +83,7 @@ export const frFR: MessageSchema = {
     signingIn: 'Connexion…',
     secureSession: 'Session sécurisée avec jetons de renouvellement rotatifs',
     loginFailed: "Le nom d'utilisateur ou le mot de passe est incorrect.",
+    restoringSession: 'Vérification de la session sécurisée…',
   },
   dashboard: {
     eyebrow: "Vue d'ensemble",
@@ -342,10 +343,51 @@ export const frFR: MessageSchema = {
     USER: 'Utilisateur',
     ADMIN: 'Administrateur',
   },
+  pwa: {
+    install: "Installer l'app",
+    showInstructions: 'Voir les étapes',
+    later: 'Plus tard',
+    updateNow: 'Mettre à jour',
+    updateTitle: 'Mettre Inventory Art à jour ?',
+    updateWarning:
+      "L'application va se recharger. Enregistrez tout formulaire en cours avant la mise à jour.",
+    status: {
+      offline: {
+        title: 'Vous êtes hors ligne',
+        body: "L'interface reste disponible, mais les données et modifications nécessitent une connexion.",
+      },
+      update: {
+        title: 'Une nouvelle version est prête',
+        body: 'Mettez à jour après avoir enregistré votre travail en cours.',
+      },
+      backend: {
+        title: 'Connexion au serveur',
+        body: "Après une période d'inactivité, le service sécurisé peut prendre un moment à démarrer.",
+        unavailable:
+          'Le serveur prend plus de temps que prévu. Relancez la vérification sécurisée.',
+      },
+      ready: {
+        title: 'Interface disponible hors ligne',
+        body: "Les fichiers d'interface sont enregistrés. Les données métier ne le sont jamais.",
+      },
+      install: {
+        title: 'Gardez Inventory Art sur cet appareil',
+        body: "Installez l'espace sécurisé pour l'ouvrir en plein écran.",
+      },
+    },
+    ios: {
+      title: "Ajouter à l'écran d'accueil",
+      share: 'Ouvrez le menu Partager du navigateur.',
+      add: 'Choisissez « Sur l’écran d’accueil ».',
+      confirm: 'Confirmez le nom, puis touchez Ajouter.',
+    },
+  },
   errors: {
     title: 'Une action est nécessaire',
     generic: "La requête n'a pas pu aboutir. Réessayez.",
     network: 'Service inaccessible. Vérifiez votre connexion puis réessayez.',
+    writeOutcomeUnknown:
+      "La connexion a pris fin avant confirmation. Actualisez la liste avant d'envoyer à nouveau.",
     forbidden: "Vous n'avez pas la permission d'effectuer cette action.",
     notFound: 'Page introuvable',
     notFoundBody: "La page a peut-être été déplacée ou n'existe plus.",

@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   setAccessToken: vi.fn(),
   configureSessionHandlers: vi.fn(),
   refreshSession: vi.fn(),
+  warmBackend: vi.fn(),
+  broadcastSessionChange: vi.fn(),
 }))
 
 vi.mock('@/services/api', () => ({
@@ -14,6 +16,10 @@ vi.mock('@/services/api', () => ({
   setAccessToken: mocks.setAccessToken,
   configureSessionHandlers: mocks.configureSessionHandlers,
   refreshSession: mocks.refreshSession,
+  warmBackend: mocks.warmBackend,
+}))
+vi.mock('@/services/sessionSync', () => ({
+  broadcastSessionChange: mocks.broadcastSessionChange,
 }))
 
 import { i18n, setAppLocale } from '@/i18n'
@@ -38,6 +44,7 @@ describe('auth locale behavior', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mocks.warmBackend.mockResolvedValue(undefined)
     setAppLocale('en')
   })
 
@@ -65,6 +72,30 @@ describe('auth locale behavior', () => {
     expect(auth.token).toBeNull()
     expect(auth.initialized).toBe(true)
     expect(mocks.post).not.toHaveBeenCalled()
+    expect(mocks.broadcastSessionChange).toHaveBeenCalledOnce()
+  })
+
+  it('warms the backend before refreshing the initial session', async () => {
+    const auth = useAuthStore()
+    mocks.refreshSession.mockResolvedValue(session('en'))
+
+    await auth.initialize()
+
+    expect(mocks.warmBackend).toHaveBeenCalledOnce()
+    expect(mocks.refreshSession).toHaveBeenCalledOnce()
+    expect(mocks.warmBackend.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.refreshSession.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('broadcasts login without persisting user data in browser storage', async () => {
+    const auth = useAuthStore()
+    mocks.post.mockResolvedValue({ data: session('en') })
+
+    await auth.login('demo', 'password')
+
+    expect(mocks.broadcastSessionChange).toHaveBeenCalledOnce()
+    expect(auth.user?.username).toBe('demo')
   })
 
   it('persists a changed locale and keeps the server response', async () => {

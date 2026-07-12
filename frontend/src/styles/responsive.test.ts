@@ -22,4 +22,11 @@ describe('mobile-primary layout contract', () => {
     expect(mobileRules).toMatch(/\.quick-actions__list\s*\{[^}]*grid-template-columns:\s*1fr/s)
     expect(css).toMatch(/\.quick-action\s*\{[^}]*font-size:\s*13px/s)
   })
+
+  it('keeps PWA notices clear of notches and standalone chrome', () => {
+    expect(css).toContain('@media (display-mode: standalone)')
+    expect(css).toContain('env(safe-area-inset-top)')
+    expect(css).toContain('env(safe-area-inset-bottom)')
+    expect(mobileRules).toMatch(/\.pwa-status\s*\{[^}]*top:/s)
+  })
 })
