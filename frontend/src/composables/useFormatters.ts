@@ -9,7 +9,9 @@ export function useFormatters() {
   const defaultCurrency = computed(() => auth.user?.tenant?.defaultCurrency || 'EUR')
 
   function money(value: number | string | null | undefined, currency = defaultCurrency.value) {
-    return new Intl.NumberFormat(locale.value, { style: 'currency', currency }).format(Number(value || 0))
+    return new Intl.NumberFormat(locale.value, { style: 'currency', currency }).format(
+      Number(value || 0),
+    )
   }
 
   function number(value: number | string | null | undefined) {

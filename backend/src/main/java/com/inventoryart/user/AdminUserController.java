@@ -1,18 +1,132 @@
 package com.inventoryart.user;
 
-import com.inventoryart.audit.AuditService;import com.inventoryart.auth.AuthDtos;import com.inventoryart.auth.AuthService;import com.inventoryart.common.PageResponse;import com.inventoryart.exception.*;import com.inventoryart.tenant.Tenant;import com.inventoryart.tenant.TenantRepository;
-import jakarta.validation.Valid;import jakarta.validation.constraints.*;import org.springframework.data.domain.*;import org.springframework.http.HttpStatus;import org.springframework.security.crypto.password.PasswordEncoder;import org.springframework.transaction.annotation.Transactional;import org.springframework.web.bind.annotation.*;
+import com.inventoryart.audit.AuditService;
+import com.inventoryart.auth.AuthDtos;
+import com.inventoryart.auth.AuthService;
+import com.inventoryart.common.PageResponse;
+import com.inventoryart.exception.*;
+import com.inventoryart.tenant.Tenant;
+import com.inventoryart.tenant.TenantRepository;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import java.util.*;
+import org.springframework.data.domain.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
 
-@RestController @RequestMapping("/api/v1/admin/users")
+@RestController
+@RequestMapping("/api/v1/admin/users")
 public class AdminUserController {
-    private final UserRepository users;private final TenantRepository tenants;private final PasswordEncoder passwords;private final AuthService auth;private final AuditService audit;
-    public AdminUserController(UserRepository users,TenantRepository tenants,PasswordEncoder passwords,AuthService auth,AuditService audit){this.users=users;this.tenants=tenants;this.passwords=passwords;this.auth=auth;this.audit=audit;}
-    @GetMapping public PageResponse<AuthDtos.UserResponse> list(@RequestParam(required=false)UUID tenantId,@RequestParam(required=false)String q,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){Pageable pageable=PageRequest.of(page,Math.min(size,50),Sort.by("username"));Page<User> result=users.searchAdmin(tenantId,q==null?"":q.trim(),pageable);Set<UUID> tenantIds=new HashSet<>();result.forEach(user->{if(user.getTenantId()!=null)tenantIds.add(user.getTenantId());});Map<UUID,Tenant> tenantMap=new HashMap<>();tenants.findAllById(tenantIds).forEach(tenant->tenantMap.put(tenant.getId(),tenant));audit.record(tenantId,"ADMIN_USER_LIST","USER",null,"SUCCESS",Map.of("page",page));return PageResponse.of(result.map(user->AuthDtos.UserResponse.from(user,tenantMap.get(user.getTenantId()))));}
-    @PostMapping @ResponseStatus(HttpStatus.CREATED) @Transactional public AuthDtos.UserResponse create(@Valid @RequestBody Create r){if(users.existsByUsernameIgnoreCase(r.username())||users.existsByEmailIgnoreCase(r.email()))throw new BusinessException("DUPLICATE_USER","Username or email already exists");Tenant tenant=r.role()==UserRole.ADMIN?null:tenants.findById(r.tenantId()).filter(Tenant::isEnabled).orElseThrow(()->new NotFoundException("Tenant"));User u=users.save(new User(UUID.randomUUID(),tenant==null?null:tenant.getId(),r.username(),r.email(),passwords.encode(r.password()),r.displayName(),r.role()));if(r.preferredLocale()!=null)u.updateProfile(r.displayName(),r.preferredLocale());audit.record(u.getTenantId(),"USER_CREATE","USER",u.getId(),"SUCCESS",Map.of("role",u.getRole()));return AuthDtos.UserResponse.from(u,tenant);}
-    @PostMapping("/{id}/enabled") @Transactional public AuthDtos.UserResponse enabled(@PathVariable UUID id,@RequestBody Enabled r){User u=users.findById(id).orElseThrow(()->new NotFoundException("User"));u.setEnabled(r.enabled());if(!r.enabled())auth.revokeUser(id);audit.record(u.getTenantId(),r.enabled()?"USER_ENABLE":"USER_DISABLE","USER",id,"SUCCESS",Map.of());return AuthDtos.UserResponse.from(u,tenant(u));}
-    @PostMapping("/{id}/reset-password") @ResponseStatus(HttpStatus.NO_CONTENT) @Transactional public void reset(@PathVariable UUID id,@Valid @RequestBody Reset r){User u=users.findById(id).orElseThrow(()->new NotFoundException("User"));u.changePassword(passwords.encode(r.password()));auth.revokeUser(id);audit.record(u.getTenantId(),"USER_PASSWORD_RESET","USER",id,"SUCCESS",Map.of());}
-    public record Create(UUID tenantId,@NotBlank String username,@Email @NotBlank String email,@NotBlank @Size(min=10,max=100)String password,@NotBlank String displayName,@NotNull UserRole role,String preferredLocale){}
-    public record Enabled(boolean enabled){}public record Reset(@NotBlank @Size(min=10,max=100)String password){}
-    private Tenant tenant(User user){return user.getTenantId()==null?null:tenants.findById(user.getTenantId()).orElse(null);}
+  private final UserRepository users;
+  private final TenantRepository tenants;
+  private final PasswordEncoder passwords;
+  private final AuthService auth;
+  private final AuditService audit;
+
+  public AdminUserController(
+      UserRepository users,
+      TenantRepository tenants,
+      PasswordEncoder passwords,
+      AuthService auth,
+      AuditService audit) {
+    this.users = users;
+    this.tenants = tenants;
+    this.passwords = passwords;
+    this.auth = auth;
+    this.audit = audit;
+  }
+
+  @GetMapping
+  public PageResponse<AuthDtos.UserResponse> list(
+      @RequestParam(required = false) UUID tenantId,
+      @RequestParam(required = false) String q,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    Pageable pageable = PageRequest.of(page, Math.min(size, 50), Sort.by("username"));
+    Page<User> result = users.searchAdmin(tenantId, q == null ? "" : q.trim(), pageable);
+    Set<UUID> tenantIds = new HashSet<>();
+    result.forEach(
+        user -> {
+          if (user.getTenantId() != null) tenantIds.add(user.getTenantId());
+        });
+    Map<UUID, Tenant> tenantMap = new HashMap<>();
+    tenants.findAllById(tenantIds).forEach(tenant -> tenantMap.put(tenant.getId(), tenant));
+    audit.record(tenantId, "ADMIN_USER_LIST", "USER", null, "SUCCESS", Map.of("page", page));
+    return PageResponse.of(
+        result.map(user -> AuthDtos.UserResponse.from(user, tenantMap.get(user.getTenantId()))));
+  }
+
+  @PostMapping
+  @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
+  public AuthDtos.UserResponse create(@Valid @RequestBody Create r) {
+    if (users.existsByUsernameIgnoreCase(r.username()) || users.existsByEmailIgnoreCase(r.email()))
+      throw new BusinessException("DUPLICATE_USER", "Username or email already exists");
+    Tenant tenant =
+        r.role() == UserRole.ADMIN
+            ? null
+            : tenants
+                .findById(r.tenantId())
+                .filter(Tenant::isEnabled)
+                .orElseThrow(() -> new NotFoundException("Tenant"));
+    User u =
+        users.save(
+            new User(
+                UUID.randomUUID(),
+                tenant == null ? null : tenant.getId(),
+                r.username(),
+                r.email(),
+                passwords.encode(r.password()),
+                r.displayName(),
+                r.role()));
+    if (r.preferredLocale() != null) u.updateProfile(r.displayName(), r.preferredLocale());
+    audit.record(
+        u.getTenantId(), "USER_CREATE", "USER", u.getId(), "SUCCESS", Map.of("role", u.getRole()));
+    return AuthDtos.UserResponse.from(u, tenant);
+  }
+
+  @PostMapping("/{id}/enabled")
+  @Transactional
+  public AuthDtos.UserResponse enabled(@PathVariable UUID id, @RequestBody Enabled r) {
+    User u = users.findById(id).orElseThrow(() -> new NotFoundException("User"));
+    u.setEnabled(r.enabled());
+    if (!r.enabled()) auth.revokeUser(id);
+    audit.record(
+        u.getTenantId(),
+        r.enabled() ? "USER_ENABLE" : "USER_DISABLE",
+        "USER",
+        id,
+        "SUCCESS",
+        Map.of());
+    return AuthDtos.UserResponse.from(u, tenant(u));
+  }
+
+  @PostMapping("/{id}/reset-password")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
+  public void reset(@PathVariable UUID id, @Valid @RequestBody Reset r) {
+    User u = users.findById(id).orElseThrow(() -> new NotFoundException("User"));
+    u.changePassword(passwords.encode(r.password()));
+    auth.revokeUser(id);
+    audit.record(u.getTenantId(), "USER_PASSWORD_RESET", "USER", id, "SUCCESS", Map.of());
+  }
+
+  public record Create(
+      UUID tenantId,
+      @NotBlank String username,
+      @Email @NotBlank String email,
+      @NotBlank @Size(min = 10, max = 100) String password,
+      @NotBlank String displayName,
+      @NotNull UserRole role,
+      String preferredLocale) {}
+
+  public record Enabled(boolean enabled) {}
+
+  public record Reset(@NotBlank @Size(min = 10, max = 100) String password) {}
+
+  private Tenant tenant(User user) {
+    return user.getTenantId() == null ? null : tenants.findById(user.getTenantId()).orElse(null);
+  }
 }

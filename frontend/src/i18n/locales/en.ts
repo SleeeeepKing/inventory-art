@@ -147,7 +147,8 @@ export const en = {
     currentStock: 'Current',
     correctedStock: 'Corrected',
     exactQuantity: 'Exact quantity on hand',
-    correctionHint: 'This replaces the current stock quantity with an exact count. It creates a correction entry and is never included in sales analysis.',
+    correctionHint:
+      'This replaces the current stock quantity with an exact count. It creates a correction entry and is never included in sales analysis.',
     correctionReasonPlaceholder: 'Optional note about the physical count or correction',
     applyCorrection: 'Apply correction',
     stockCorrected: 'Stock quantity corrected.',
@@ -160,7 +161,8 @@ export const en = {
     attributedAmount: 'Attributed value',
     attributedDate: 'Analysis date',
     attributedDateHint: 'Exhibition sales are grouped by the exhibition end date.',
-    attributionWarning: 'These product quantities and prices support product analysis. Their value is not added to order revenue.',
+    attributionWarning:
+      'These product quantities and prices support product analysis. Their value is not added to order revenue.',
     saleSummary: '{count} units · {amount}',
     product: 'Product',
     movement: 'Movement',
@@ -199,7 +201,8 @@ export const en = {
   orders: {
     eyebrow: 'Sales desk',
     title: 'Orders',
-    subtitle: 'Record each sale amount, with optional product quantities. Orders never change inventory.',
+    subtitle:
+      'Record each sale amount, with optional product quantities. Orders never change inventory.',
     newOrder: 'New order',
     createOrder: 'Create order',
     orderNumber: 'Order',
@@ -222,7 +225,8 @@ export const en = {
     eventCreated: 'Exhibition created.',
     eventUpdated: 'Exhibition updated.',
     batchRecord: 'Batch record',
-    batchTimeHint: 'All amounts in this batch share one transaction time, so they appear in the same hourly report bucket.',
+    batchTimeHint:
+      'All amounts in this batch share one transaction time, so they appear in the same hourly report bucket.',
     batchAmounts: 'Order amounts',
     addAmount: 'Add amount',
     batchTotal: 'Batch total',
@@ -267,12 +271,19 @@ export const en = {
     refunded: 'Refund recorded.',
     emptyTitle: 'No orders yet',
     emptyBody: 'Create an order or import a SumUp file to start the sales history.',
-    filters: { all: 'All orders', draft: 'Draft', active: 'Active', completed: 'Completed', cancelled: 'Cancelled' },
+    filters: {
+      all: 'All orders',
+      draft: 'Draft',
+      active: 'Active',
+      completed: 'Completed',
+      cancelled: 'Cancelled',
+    },
   },
   events: {
     eyebrow: 'Exhibition calendar',
     title: 'Exhibitions',
-    subtitle: 'Maintain the exhibition timeline used by orders, inventory sales, SumUp imports, and reports.',
+    subtitle:
+      'Maintain the exhibition timeline used by orders, inventory sales, SumUp imports, and reports.',
     summary: 'Exhibition summary',
     add: 'Add exhibition',
     create: 'Create exhibition',
@@ -293,10 +304,16 @@ export const en = {
     enabled: 'Exhibition enabled.',
     disabled: 'Exhibition disabled.',
     deleteTitle: 'Delete exhibition?',
-    deleteBody: 'Delete {name}? Exhibitions already linked to business records cannot be deleted and should be disabled instead.',
+    deleteBody:
+      'Delete {name}? Exhibitions already linked to business records cannot be deleted and should be disabled instead.',
     emptyTitle: 'Build your exhibition calendar',
     emptyBody: 'Add an exhibition to connect orders, stock sales, imports, and reporting.',
-    lifecycle: { upcoming: 'Upcoming', ongoing: 'In progress', finished: 'Finished', disabled: 'Disabled' },
+    lifecycle: {
+      upcoming: 'Upcoming',
+      ongoing: 'In progress',
+      finished: 'Finished',
+      disabled: 'Disabled',
+    },
   },
   import: {
     eyebrow: 'SumUp workspace',
@@ -320,7 +337,8 @@ export const en = {
     selectedFile: 'Selected file',
     salesEvent: 'Sales event',
     eventRequired: 'Select the exhibition for this SumUp import.',
-    eventReview: 'Imported orders will be assigned to {event}; SumUp is recorded as the payment method.',
+    eventReview:
+      'Imported orders will be assigned to {event}; SumUp is recorded as the payment method.',
     uploadAndAnalyze: 'Upload and analyze',
     analyzing: 'Analyzing file…',
     mappingHint: 'Confirm how source columns map to sales fields.',
@@ -350,13 +368,15 @@ export const en = {
     normalizedPreview: 'Normalized preview',
     applySummaryInventory: 'Also deduct mapped product quantities from inventory',
     summaryInventoryTitle: 'Apply product summary to inventory?',
-    summaryInventoryBody: 'This is a second, explicit confirmation. The mapped summary quantities will be deducted and recorded as stock movements.',
+    summaryInventoryBody:
+      'This is a second, explicit confirmation. The mapped summary quantities will be deducted and recorded as stock movements.',
     applyInventory: 'Apply to inventory',
     reviewWarning: 'Imported sales and product matches will not change inventory.',
     confirmImport: 'Confirm import',
     importing: 'Importing rows…',
     completedTitle: 'Import completed',
-    completedBody: '{count} rows were imported. You can review errors or return to the import history.',
+    completedBody:
+      '{count} rows were imported. You can review errors or return to the import history.',
     importedRows: 'Imported',
     updatedRows: 'Updated',
     duplicateRows: 'Duplicates',
@@ -365,7 +385,8 @@ export const en = {
     downloadErrors: 'Download error CSV',
     revert: 'Revert import',
     revertTitle: 'Revert this import?',
-    revertBody: 'Imported sales records will be reversed. Records changed manually after import will block the operation.',
+    revertBody:
+      'Imported sales records will be reversed. Records changed manually after import will block the operation.',
     duplicate: 'This exact file was already uploaded.',
     noFile: 'Choose a file before continuing.',
     emptyTitle: 'No SumUp imports',
@@ -405,7 +426,8 @@ export const en = {
     paymentMethods: 'Payment methods',
     events: 'Events',
     inventorySalesTitle: 'Inventory sales analysis',
-    inventorySalesHint: 'Product quantities and actual prices are analyzed separately and never added to order revenue.',
+    inventorySalesHint:
+      'Product quantities and actual prices are analyzed separately and never added to order revenue.',
     saleBatches: 'Sale batches',
     attributedValue: 'Attributed value',
     weightedPrice: 'Weighted average price',
@@ -430,7 +452,8 @@ export const en = {
   profile: {
     eyebrow: 'Personal settings',
     title: 'Profile & language',
-    subtitle: 'Your language follows you on every device. Business currency and timezone remain tenant settings.',
+    subtitle:
+      'Your language follows you on every device. Business currency and timezone remain tenant settings.',
     identity: 'Identity',
     displayName: 'Display name',
     email: 'Email address',
@@ -547,7 +570,8 @@ export const en = {
     duplicateTenantSlug: 'That slug is already used by another tenant.',
     duplicateEventName: 'That exhibition name already exists.',
     salesEventDisabled: 'That exhibition is disabled and cannot be used for new orders.',
-    salesEventInUse: 'This exhibition has linked orders, imports, or stock sales. Disable it to preserve historical records.',
+    salesEventInUse:
+      'This exhibition has linked orders, imports, or stock sales. Disable it to preserve historical records.',
     insufficientStock: 'There is not enough stock to complete this operation.',
     currencyMismatch: 'The product and order currencies must match.',
     invalidLocale: 'Choose English, Simplified Chinese, or French.',

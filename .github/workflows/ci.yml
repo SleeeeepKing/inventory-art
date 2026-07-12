@@ -33,6 +33,9 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
 
+      - name: Check Java formatting
+        run: mvn -B -ntp spotless:check
+
       - name: Compile and run unit and Testcontainers tests
         run: mvn -B -ntp verify
 
@@ -68,6 +71,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
 
       - name: Lint
         run: npm run lint

@@ -6,7 +6,15 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsCoreOption } from 'echarts/core'
 
-echarts.use([LineChart, BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+echarts.use([
+  LineChart,
+  BarChart,
+  PieChart,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  CanvasRenderer,
+])
 const props = defineProps<{ option: EChartsCoreOption }>()
 const host = ref<HTMLElement>()
 let chart: ReturnType<typeof echarts.init> | undefined
@@ -19,8 +27,15 @@ onMounted(() => {
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(host.value)
 })
-watch(() => props.option, (option) => chart?.setOption(option, true), { deep: true })
-onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
+watch(
+  () => props.option,
+  (option) => chart?.setOption(option, true),
+  { deep: true },
+)
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  chart?.dispose()
+})
 </script>
 
 <template><div ref="host" class="chart-canvas" /></template>

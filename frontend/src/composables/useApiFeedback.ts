@@ -42,11 +42,11 @@ export function useApiFeedback() {
     else if (Object.keys(parsed.fieldErrors).length) {
       const details = [...new Set(Object.values(parsed.fieldErrors))].join('; ')
       message = `${t(errorKeys[parsed.code] || 'errors.validation')} ${details}`
-    }
-    else if (errorKeys[parsed.code]) message = t(errorKeys[parsed.code])
+    } else if (errorKeys[parsed.code]) message = t(errorKeys[parsed.code])
     else if (parsed.status === 401) message = t('errors.sessionExpired')
     else if (parsed.status === 403) message = t('errors.forbidden')
-    else if (parsed.status && parsed.status >= 400 && parsed.status < 500 && parsed.message) message = parsed.message
+    else if (parsed.status && parsed.status >= 400 && parsed.status < 500 && parsed.message)
+      message = parsed.message
     else {
       message = t('errors.generic')
       if (parsed.traceId) message += ` ${t('errors.traceId', { traceId: parsed.traceId })}`

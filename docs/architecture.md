@@ -33,18 +33,18 @@ flowchart LR
 
 后端位于 `backend/src/main/java/com/inventoryart`，采用按业务能力分包的模块化单体。
 
-| 模块 | 职责 |
-| --- | --- |
-| `auth` / `security` | 登录、JWT、Refresh Token 轮换、认证上下文、角色授权、登录限流 |
-| `tenant` / `user` | Tenant、用户、个人设置、ADMIN 用户与 Tenant 管理 |
-| `product` | 商品 CRUD、SKU 约束、图片关联、销售聚合视图 |
-| `inventory` | 行锁、最多 100 个商品的原子售出批次、实际售价、独立库存流水和导出 |
-| `order` / `payment` | 金额必填、商品可选的订单状态机、展会金额批量补录、支付、取消和退款 |
-| `sumup` | 文件上传、解析、映射、预览、幂等导入、外部交易和撤销 |
-| `report` | 集中的数据源纳入策略、KPI、趋势和分组聚合 |
-| `storage` | `StorageService` 以及 Local、MinIO、R2 实现，预签名和对象确认 |
-| `audit` | 安全与业务关键操作审计，尤其是 ADMIN 跨 Tenant 访问 |
-| `common` / `exception` / `config` | 分页、金额/时间、公用配置、traceId、统一错误响应 |
+| 模块                              | 职责                                                               |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `auth` / `security`               | 登录、JWT、Refresh Token 轮换、认证上下文、角色授权、登录限流      |
+| `tenant` / `user`                 | Tenant、用户、个人设置、ADMIN 用户与 Tenant 管理                   |
+| `product`                         | 商品 CRUD、SKU 约束、图片关联、销售聚合视图                        |
+| `inventory`                       | 行锁、最多 100 个商品的原子售出批次、实际售价、独立库存流水和导出  |
+| `order` / `payment`               | 金额必填、商品可选的订单状态机、展会金额批量补录、支付、取消和退款 |
+| `sumup`                           | 文件上传、解析、映射、预览、幂等导入、外部交易和撤销               |
+| `report`                          | 集中的数据源纳入策略、KPI、趋势和分组聚合                          |
+| `storage`                         | `StorageService` 以及 Local、MinIO、R2 实现，预签名和对象确认      |
+| `audit`                           | 安全与业务关键操作审计，尤其是 ADMIN 跨 Tenant 访问                |
+| `common` / `exception` / `config` | 分页、金额/时间、公用配置、traceId、统一错误响应                   |
 
 Controller 仅处理 HTTP、DTO 校验和认证入口；Service 负责事务与业务规则；Repository 负责 Tenant-aware 查询。JPA Entity 不直接作为 API 响应。
 

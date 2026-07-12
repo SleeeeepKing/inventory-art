@@ -39,7 +39,9 @@ const primaryNav = [
   { to: '/imports', key: 'nav.imports', icon: Operation },
   { to: '/reports', key: 'nav.reports', icon: DataAnalysis },
 ]
-const visiblePrimaryNav = computed(() => auth.isAdmin ? primaryNav.filter((item) => item.to === '/reports') : primaryNav)
+const visiblePrimaryNav = computed(() =>
+  auth.isAdmin ? primaryNav.filter((item) => item.to === '/reports') : primaryNav,
+)
 const adminNav = [
   { to: '/admin/tenants', key: 'nav.tenants', icon: OfficeBuilding },
   { to: '/admin/users', key: 'nav.users', icon: UserFilled },
@@ -47,9 +49,21 @@ const adminNav = [
   { to: '/admin/data', key: 'nav.globalData', icon: Histogram },
 ]
 const pageTitle = computed(() => (route.meta.titleKey ? t(route.meta.titleKey) : t('app.name')))
-const initials = computed(() => (auth.user?.displayName || auth.user?.email || 'IA').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase())
+const initials = computed(() =>
+  (auth.user?.displayName || auth.user?.email || 'IA')
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase(),
+)
 
-watch(() => route.fullPath, () => { mobileOpen.value = false })
+watch(
+  () => route.fullPath,
+  () => {
+    mobileOpen.value = false
+  },
+)
 watch(mobileOpen, (open) => document.body.classList.toggle('nav-open', open))
 onBeforeUnmount(() => document.body.classList.remove('nav-open'))
 
@@ -61,19 +75,51 @@ async function signOut() {
 
 <template>
   <div class="app-shell" :class="{ 'is-collapsed': collapsed }">
-    <button class="mobile-menu" type="button" :aria-label="t('nav.openMenu')" aria-controls="primary-navigation" :aria-expanded="mobileOpen" @click="mobileOpen = true"><MenuIcon /></button>
-    <button v-if="mobileOpen" class="nav-scrim" type="button" :aria-label="t('common.close')" @click="mobileOpen = false" />
+    <button
+      class="mobile-menu"
+      type="button"
+      :aria-label="t('nav.openMenu')"
+      aria-controls="primary-navigation"
+      :aria-expanded="mobileOpen"
+      @click="mobileOpen = true"
+    >
+      <MenuIcon />
+    </button>
+    <button
+      v-if="mobileOpen"
+      class="nav-scrim"
+      type="button"
+      :aria-label="t('common.close')"
+      @click="mobileOpen = false"
+    />
     <aside id="primary-navigation" class="side-nav" :class="{ 'is-mobile-open': mobileOpen }">
       <div class="brand-lockup">
-        <div class="brand-mark"><span /><b>{{ t('app.shortName') }}</b></div>
-        <div class="brand-copy"><strong>{{ t('app.name') }}</strong><small>{{ t('app.workspace') }}</small></div>
-        <button class="drawer-close" type="button" :aria-label="t('common.close')" @click="mobileOpen = false"><Close /></button>
+        <div class="brand-mark">
+          <span /><b>{{ t('app.shortName') }}</b>
+        </div>
+        <div class="brand-copy">
+          <strong>{{ t('app.name') }}</strong
+          ><small>{{ t('app.workspace') }}</small>
+        </div>
+        <button
+          class="drawer-close"
+          type="button"
+          :aria-label="t('common.close')"
+          @click="mobileOpen = false"
+        >
+          <Close />
+        </button>
       </div>
 
       <nav class="nav-groups">
         <section>
           <p class="nav-label">{{ t('nav.operations') }}</p>
-          <RouterLink v-for="item in visiblePrimaryNav" :key="item.to" :to="item.to" class="nav-item">
+          <RouterLink
+            v-for="item in visiblePrimaryNav"
+            :key="item.to"
+            :to="item.to"
+            class="nav-item"
+          >
             <component :is="item.icon" /><span>{{ t(item.key) }}</span>
           </RouterLink>
         </section>
@@ -88,18 +134,33 @@ async function signOut() {
       <div class="side-nav__bottom">
         <RouterLink to="/profile" class="user-chip">
           <span class="user-chip__avatar">{{ initials }}</span>
-          <span class="user-chip__copy"><strong>{{ auth.user?.displayName }}</strong><small>{{ auth.user?.tenant?.name || auth.user?.role }}</small></span>
+          <span class="user-chip__copy"
+            ><strong>{{ auth.user?.displayName }}</strong
+            ><small>{{ auth.user?.tenant?.name || auth.user?.role }}</small></span
+          >
           <Setting />
         </RouterLink>
-        <button class="nav-item sign-out" type="button" @click="signOut"><SwitchButton /><span>{{ t('auth.signOut') }}</span></button>
-        <button class="collapse-control" type="button" :aria-label="t(collapsed ? 'nav.expand' : 'nav.collapse')" @click="collapsed = !collapsed">
+        <button class="nav-item sign-out" type="button" @click="signOut">
+          <SwitchButton /><span>{{ t('auth.signOut') }}</span>
+        </button>
+        <button
+          class="collapse-control"
+          type="button"
+          :aria-label="t(collapsed ? 'nav.expand' : 'nav.collapse')"
+          @click="collapsed = !collapsed"
+        >
           <Fold /><span>{{ t(collapsed ? 'nav.expand' : 'nav.collapse') }}</span>
         </button>
       </div>
     </aside>
 
     <main class="workspace">
-      <div class="workspace__bar"><span>{{ pageTitle }}</span><span class="workspace__tenant"><User />{{ auth.user?.tenant?.name || auth.user?.email }}</span></div>
+      <div class="workspace__bar">
+        <span>{{ pageTitle }}</span
+        ><span class="workspace__tenant"
+          ><User />{{ auth.user?.tenant?.name || auth.user?.email }}</span
+        >
+      </div>
       <div class="workspace__content"><RouterView /></div>
     </main>
   </div>

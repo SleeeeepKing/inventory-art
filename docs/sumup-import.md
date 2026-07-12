@@ -16,13 +16,13 @@
 
 导入向导自动识别，无法可靠判断时要求用户选择：
 
-| 类型 | 每行含义 | 订单/交易 | 库存影响 | 主销售报表 |
-| --- | --- | --- | --- | --- |
-| `TRANSACTION_HISTORY` | 一笔支付、退款、手续费等交易 | 创建/更新 `external_transactions`；成功支付可建未分配订单 | 无 | 逐笔交易或其关联订单只计一次 |
-| `ORDER_HISTORY` | Ticket/Order 的一个商品行 | 按外部订单号聚合订单与明细 | 无 | 计算聚合后的订单一次 |
-| `PRODUCT_SALES` | 某周期商品销售汇总 | 写 `imported_sales_summaries`，不伪造顾客订单 | 无 | 默认只用于对账，不与逐笔销售相加 |
-| `ACCOUNTING_REPORT` | 日期/支付方式/税率汇总 | 写 `imported_accounting_summaries` | 无 | 只用于对账，不进入主销售额 |
-| `UNKNOWN` | 不能可靠识别 | 不允许确认 | 无 | 无 |
+| 类型                  | 每行含义                     | 订单/交易                                                 | 库存影响 | 主销售报表                       |
+| --------------------- | ---------------------------- | --------------------------------------------------------- | -------- | -------------------------------- |
+| `TRANSACTION_HISTORY` | 一笔支付、退款、手续费等交易 | 创建/更新 `external_transactions`；成功支付可建未分配订单 | 无       | 逐笔交易或其关联订单只计一次     |
+| `ORDER_HISTORY`       | Ticket/Order 的一个商品行    | 按外部订单号聚合订单与明细                                | 无       | 计算聚合后的订单一次             |
+| `PRODUCT_SALES`       | 某周期商品销售汇总           | 写 `imported_sales_summaries`，不伪造顾客订单             | 无       | 默认只用于对账，不与逐笔销售相加 |
+| `ACCOUNTING_REPORT`   | 日期/支付方式/税率汇总       | 写 `imported_accounting_summaries`                        | 无       | 只用于对账，不进入主销售额       |
+| `UNKNOWN`             | 不能可靠识别                 | 不允许确认                                                | 无       | 无                               |
 
 交易级文件没有商品明细时，系统可以创建 `source=SUMUP_IMPORT`、`allocationStatus=UNALLOCATED` 的订单。它可以进入财务销售额，但不能进入具体商品销量。任何导入类型都不能扣减商品库存。
 
@@ -68,20 +68,20 @@ flowchart LR
 
 自动映射覆盖但不限于：
 
-| 规范字段 | 英文示例 | 法文示例 |
-| --- | --- | --- |
-| 交易 ID/代码 | Transaction ID, Transaction Code | ID transaction, Code transaction |
-| 日期/时间 | Date, Time | Date, Heure |
-| 状态/类型 | Status, Type | Statut, Type |
-| 金额/币种 | Amount, Currency | Montant, Devise |
-| 手续费/净额 | Fee, Net Amount | Frais, Montant net |
-| 商品/引用 | Product, Product Name, Reference, SKU | Produit, Référence |
-| 数量/单价 | Quantity, Unit Price | Quantité, Prix unitaire |
-| 折扣 | Discount | Réductions |
-| 含税/未税收入 | Gross Revenue, Net Revenue | CA TTC, CA HT |
-| 税 | VAT, Tax | Montant TVA, TVA |
-| 支付方式 | Payment Method | Mode de paiement |
-| 商户/位置 | Merchant, Employee, Location | Commerçant, Employé, Emplacement |
+| 规范字段      | 英文示例                              | 法文示例                         |
+| ------------- | ------------------------------------- | -------------------------------- |
+| 交易 ID/代码  | Transaction ID, Transaction Code      | ID transaction, Code transaction |
+| 日期/时间     | Date, Time                            | Date, Heure                      |
+| 状态/类型     | Status, Type                          | Statut, Type                     |
+| 金额/币种     | Amount, Currency                      | Montant, Devise                  |
+| 手续费/净额   | Fee, Net Amount                       | Frais, Montant net               |
+| 商品/引用     | Product, Product Name, Reference, SKU | Produit, Référence               |
+| 数量/单价     | Quantity, Unit Price                  | Quantité, Prix unitaire          |
+| 折扣          | Discount                              | Réductions                       |
+| 含税/未税收入 | Gross Revenue, Net Revenue            | CA TTC, CA HT                    |
+| 税            | VAT, Tax                              | Montant TVA, TVA                 |
+| 支付方式      | Payment Method                        | Mode de paiement                 |
+| 商户/位置     | Merchant, Employee, Location          | Commerçant, Employé, Emplacement |
 
 表头规范化包括 Unicode NFKC、去首尾空白、合并连续空白、Locale-independent 小写和去除无语义标点；保留重音字母参与词典匹配。用户可修改自动映射，必需字段未满足时保持 `READY_FOR_MAPPING` 并返回 `IMPORT_MAPPING_REQUIRED`。
 

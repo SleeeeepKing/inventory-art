@@ -8,7 +8,9 @@
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json --pretty false",
     "lint": "eslint .",
-    "format": "prettier --write .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
+    "format:check": "prettier --check . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
     "test": "vitest",
     "test:run": "vitest run"
   },

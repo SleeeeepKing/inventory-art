@@ -21,7 +21,14 @@ import { useAuthStore } from './auth'
 import type { AuthResponse, UserProfile } from '@/types/api'
 
 function profile(locale: 'en' | 'zh-CN' | 'fr-FR'): UserProfile {
-  return { id: 'user-1', username: 'demo', email: 'demo@example.com', displayName: 'Demo', role: 'USER', preferredLocale: locale }
+  return {
+    id: 'user-1',
+    username: 'demo',
+    email: 'demo@example.com',
+    displayName: 'Demo',
+    role: 'USER',
+    preferredLocale: locale,
+  }
 }
 function session(locale: 'en' | 'zh-CN' | 'fr-FR'): AuthResponse {
   return { accessToken: 'access-token', user: profile(locale) }
@@ -65,7 +72,10 @@ describe('auth locale behavior', () => {
     auth.applySession(session('en'))
     mocks.patch.mockResolvedValue({ data: profile('fr-FR') })
     await auth.updateProfile({ displayName: 'Demo', preferredLocale: 'fr-FR' })
-    expect(mocks.patch).toHaveBeenCalledWith('/profile', { displayName: 'Demo', preferredLocale: 'fr-FR' })
+    expect(mocks.patch).toHaveBeenCalledWith('/profile', {
+      displayName: 'Demo',
+      preferredLocale: 'fr-FR',
+    })
     expect(i18n.global.locale.value).toBe('fr-FR')
   })
 
@@ -73,7 +83,9 @@ describe('auth locale behavior', () => {
     const auth = useAuthStore()
     auth.applySession(session('en'))
     mocks.patch.mockRejectedValue(new Error('network'))
-    await expect(auth.updateProfile({ displayName: 'Demo', preferredLocale: 'zh-CN' })).rejects.toThrow()
+    await expect(
+      auth.updateProfile({ displayName: 'Demo', preferredLocale: 'zh-CN' }),
+    ).rejects.toThrow()
     expect(i18n.global.locale.value).toBe('en')
   })
 })

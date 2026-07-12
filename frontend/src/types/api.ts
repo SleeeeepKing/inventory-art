@@ -109,7 +109,14 @@ export interface OrderItem {
 export interface Order {
   id: string
   orderNumber: string
-  status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' | 'UNALLOCATED'
+  status:
+    | 'DRAFT'
+    | 'CONFIRMED'
+    | 'COMPLETED'
+    | 'CANCELLED'
+    | 'REFUNDED'
+    | 'PARTIALLY_REFUNDED'
+    | 'UNALLOCATED'
   source?: string
   channel?: string
   salesChannel?: string
@@ -166,7 +173,16 @@ export interface ImportBatch {
   id: string
   fileName?: string
   originalFilename: string
-  status: 'UPLOADED' | 'ANALYZING' | 'READY_FOR_MAPPING' | 'READY_FOR_CONFIRMATION' | 'IMPORTING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED' | 'REVERSED'
+  status:
+    | 'UPLOADED'
+    | 'ANALYZING'
+    | 'READY_FOR_MAPPING'
+    | 'READY_FOR_CONFIRMATION'
+    | 'IMPORTING'
+    | 'COMPLETED'
+    | 'COMPLETED_WITH_ERRORS'
+    | 'FAILED'
+    | 'REVERSED'
   fileType?: string
   detectedType?: string
   importType?: string

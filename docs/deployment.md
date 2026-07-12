@@ -164,13 +164,13 @@ Swagger 默认路径为 `/swagger-ui.html`。如生产不需要公开 Swagger，
 1. Workers & Pages → Create application → Pages → 连接 GitHub 仓库。
 2. 设置：
 
-   | 设置 | 值 |
-   | --- | --- |
-   | Root directory | `frontend` |
-   | Framework preset | Vue / Vite |
-   | Build command | `npm run build` |
-   | Build output directory | `dist` |
-   | Node version | `24` |
+   | 设置                   | 值              |
+   | ---------------------- | --------------- |
+   | Root directory         | `frontend`      |
+   | Framework preset       | Vue / Vite      |
+   | Build command          | `npm run build` |
+   | Build output directory | `dist`          |
+   | Node version           | `24`            |
 
 3. Production environment variable：
 

@@ -2,9 +2,10 @@ package com.inventoryart.report;
 
 /** Centralized inclusion policy used by every financial dashboard query. */
 final class ReportSourcePolicy {
-    private ReportSourcePolicy() {}
+  private ReportSourcePolicy() {}
 
-    static final String INCLUDED_SALES_CTE = """
+  static final String INCLUDED_SALES_CTE =
+      """
         with included_sales as (
           select o.tenant_id, o.order_date as occurred_at, o.currency,
                  (o.total_amount + o.discount_amount) as gross_amount,

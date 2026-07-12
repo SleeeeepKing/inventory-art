@@ -9,10 +9,14 @@ import elementFr from 'element-plus/es/locale/lang/fr'
 import elementZhCn from 'element-plus/es/locale/lang/zh-cn'
 
 function flatten(value: Record<string, unknown>, prefix = ''): string[] {
-  return Object.entries(value).flatMap(([key, child]) => {
-    const path = prefix ? `${prefix}.${key}` : key
-    return typeof child === 'object' && child !== null ? flatten(child as Record<string, unknown>, path) : [path]
-  }).sort()
+  return Object.entries(value)
+    .flatMap(([key, child]) => {
+      const path = prefix ? `${prefix}.${key}` : key
+      return typeof child === 'object' && child !== null
+        ? flatten(child as Record<string, unknown>, path)
+        : [path]
+    })
+    .sort()
 }
 
 describe('i18n catalogue', () => {
@@ -24,7 +28,9 @@ describe('i18n catalogue', () => {
   it('contains no empty user-facing messages', () => {
     for (const messages of [en, zhCN, frFR]) {
       for (const key of flatten(messages)) {
-        const value = key.split('.').reduce<unknown>((node, segment) => (node as Record<string, unknown>)[segment], messages)
+        const value = key
+          .split('.')
+          .reduce<unknown>((node, segment) => (node as Record<string, unknown>)[segment], messages)
         expect(String(value).trim(), key).not.toBe('')
       }
     }

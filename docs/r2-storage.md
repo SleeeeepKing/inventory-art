@@ -116,23 +116,14 @@ Cloudflare 官方说明见 [R2 S3 API 入门](https://developers.cloudflare.com/
 ```json
 [
   {
-    "AllowedOrigins": [
-      "https://app.example.com"
-    ],
-    "AllowedMethods": [
-      "GET",
-      "PUT",
-      "HEAD"
-    ],
+    "AllowedOrigins": ["https://app.example.com"],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
     "AllowedHeaders": [
       "Content-Type",
       "x-amz-checksum-sha256",
       "x-amz-meta-sha256"
     ],
-    "ExposeHeaders": [
-      "ETag",
-      "x-amz-checksum-sha256"
-    ],
+    "ExposeHeaders": ["ETag", "x-amz-checksum-sha256"],
     "MaxAgeSeconds": 3600
   }
 ]

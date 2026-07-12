@@ -1,47 +1,62 @@
 package com.inventoryart.config;
 
+import java.util.Arrays;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Arrays;
-
 /** Prevents a production deployment from silently using local development security defaults. */
 @Component
 @Profile("prod")
 public class ProductionSafetyValidator implements InitializingBean {
-    private static final String DEVELOPMENT_JWT_SECRET = "local-development-secret-change-me-1234567890";
-    private final AppProperties properties;
+  private static final String DEVELOPMENT_JWT_SECRET =
+      "local-development-secret-change-me-1234567890";
+  private final AppProperties properties;
 
-    public ProductionSafetyValidator(AppProperties properties) { this.properties = properties; }
+  public ProductionSafetyValidator(AppProperties properties) {
+    this.properties = properties;
+  }
 
-    @Override
-    public void afterPropertiesSet() {
-        String jwtSecret = properties.getJwt().getSecret();
-        String normalizedSecret = jwtSecret == null ? "" : jwtSecret.toLowerCase(java.util.Locale.ROOT);
-        if (!StringUtils.hasText(jwtSecret) || DEVELOPMENT_JWT_SECRET.equals(jwtSecret)
-            || normalizedSecret.contains("change-me") || normalizedSecret.startsWith("replace-")
-            || jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
-            throw new IllegalStateException("Production requires a unique JWT_SECRET with at least 32 UTF-8 bytes");
-        }
-        if (!properties.getSecurity().isCookieSecure()) {
-            throw new IllegalStateException("Production requires COOKIE_SECURE=true");
-        }
-        String origins = properties.getSecurity().getCorsAllowedOrigins();
-        if (!StringUtils.hasText(origins) || Arrays.stream(origins.split(","))
-            .map(String::trim).anyMatch(origin -> origin.contains("*") || origin.contains("localhost")
-                || origin.contains("127.0.0.1") || !origin.startsWith("https://"))) {
-            throw new IllegalStateException("Production CORS_ALLOWED_ORIGINS must contain only exact HTTPS origins");
-        }
-        AppProperties.Storage storage = properties.getStorage();
-        if (!"r2".equalsIgnoreCase(storage.getProvider()) || !StringUtils.hasText(storage.getEndpoint())
-            || !StringUtils.hasText(storage.getAccessKey()) || !StringUtils.hasText(storage.getSecretKey())
-            || !StringUtils.hasText(storage.getBucket())) {
-            throw new IllegalStateException("Production requires complete private R2 storage configuration");
-        }
-        if (properties.getSeed().isEnabled()) {
-            throw new IllegalStateException("Production seed data must remain disabled");
-        }
+  @Override
+  public void afterPropertiesSet() {
+    String jwtSecret = properties.getJwt().getSecret();
+    String normalizedSecret = jwtSecret == null ? "" : jwtSecret.toLowerCase(java.util.Locale.ROOT);
+    if (!StringUtils.hasText(jwtSecret)
+        || DEVELOPMENT_JWT_SECRET.equals(jwtSecret)
+        || normalizedSecret.contains("change-me")
+        || normalizedSecret.startsWith("replace-")
+        || jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
+      throw new IllegalStateException(
+          "Production requires a unique JWT_SECRET with at least 32 UTF-8 bytes");
     }
+    if (!properties.getSecurity().isCookieSecure()) {
+      throw new IllegalStateException("Production requires COOKIE_SECURE=true");
+    }
+    String origins = properties.getSecurity().getCorsAllowedOrigins();
+    if (!StringUtils.hasText(origins)
+        || Arrays.stream(origins.split(","))
+            .map(String::trim)
+            .anyMatch(
+                origin ->
+                    origin.contains("*")
+                        || origin.contains("localhost")
+                        || origin.contains("127.0.0.1")
+                        || !origin.startsWith("https://"))) {
+      throw new IllegalStateException(
+          "Production CORS_ALLOWED_ORIGINS must contain only exact HTTPS origins");
+    }
+    AppProperties.Storage storage = properties.getStorage();
+    if (!"r2".equalsIgnoreCase(storage.getProvider())
+        || !StringUtils.hasText(storage.getEndpoint())
+        || !StringUtils.hasText(storage.getAccessKey())
+        || !StringUtils.hasText(storage.getSecretKey())
+        || !StringUtils.hasText(storage.getBucket())) {
+      throw new IllegalStateException(
+          "Production requires complete private R2 storage configuration");
+    }
+    if (properties.getSeed().isEnabled()) {
+      throw new IllegalStateException("Production seed data must remain disabled");
+    }
+  }
 }

@@ -1,6 +1,6 @@
 package com.inventoryart.report;
 
 public enum ReportGranularity {
-    DAY,
-    HOUR
+  DAY,
+  HOUR
 }

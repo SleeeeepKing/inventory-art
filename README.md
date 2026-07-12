@@ -103,11 +103,11 @@ Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用
 
 `dev` profile 会启用仅限本地的演示数据。三个账号初始 UI 语言均为英文。
 
-| 角色 | 用户名 | 密码 | Tenant |
-| --- | --- | --- | --- |
+| 角色  | 用户名  | 密码        | Tenant           |
+| ----- | ------- | ----------- | ---------------- |
 | ADMIN | `admin` | `Admin123!` | 无（全局管理员） |
-| USER | `user1` | `User123!` | 独立 Tenant 1 |
-| USER | `user2` | `User123!` | 独立 Tenant 2 |
+| USER  | `user1` | `User123!`  | 独立 Tenant 1    |
+| USER  | `user2` | `User123!`  | 独立 Tenant 2    |
 
 这些密码只能用于本地开发。生产环境不得启用 `dev` profile 或 `APP_SEED_ENABLED=true`，也不得复用任何演示密码。
 
@@ -115,34 +115,34 @@ Vite 默认地址为 <http://localhost:5173>。宿主机直跑后端默认使用
 
 复制 `.env.example` 作为本地起点。生产密钥必须放在部署平台的 Secret/Variables 中，不能提交到 Git。
 
-| 变量 | 用途 | 本地默认/示例 |
-| --- | --- | --- |
-| `PORT` | 后端监听端口（Railway 自动注入） | `8080` |
-| `SPRING_PROFILES_ACTIVE` | Spring profile | `dev`（仅本地） |
-| `DATABASE_URL` | JDBC PostgreSQL URL | `jdbc:postgresql://localhost:5432/inventory_art` |
-| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | 数据库凭据 | `inventory` / 本地密码 |
-| `DATABASE_POOL_SIZE` | Hikari 最大连接数 | `3` |
-| `JWT_SECRET` | JWT HMAC 密钥，生产使用高熵随机值 | 无安全默认值 |
-| `JWT_ACCESS_TOKEN_MINUTES` | Access Token 有效期 | `15` |
-| `JWT_REFRESH_TOKEN_DAYS` | Refresh Token 有效期 | `30` |
-| `CORS_ALLOWED_ORIGINS` | 逗号分隔的精确前端 Origin | 本地 Vite/Compose 地址 |
-| `COOKIE_SECURE` | Refresh Cookie 是否只允许 HTTPS | 本地 `false`；生产 `true` |
-| `STORAGE_PROVIDER` | `local`、`minio` 或 `r2` | Compose 为 `minio` |
-| `LOCAL_STORAGE_PATH` | 仅本地文件存储根目录 | `./storage-data` |
-| `R2_ENDPOINT` | R2/MinIO S3 endpoint | Compose 为 `http://minio.localhost:9000` |
-| `R2_PUBLIC_ENDPOINT` | 可选的浏览器预签名 URL endpoint；未设置时沿用 `R2_ENDPOINT` | Compose 为 `http://minio.localhost:9000` |
-| `R2_REGION` | S3-compatible region | R2 为 `auto` |
-| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | 私有 Bucket API 凭据 | MinIO 本地凭据 |
-| `R2_BUCKET_PRIVATE` | 私有对象 Bucket | `inventory-art` |
-| `R2_PRESIGNED_URL_EXPIRATION_SECONDS` | 预签名 URL 有效期 | `900` |
-| `IMPORT_MAX_FILE_SIZE` | Spring multipart 请求上限 | `20MB` |
-| `IMPORT_MAX_BYTES` | 业务层文件大小上限（字节） | `20971520` |
-| `IMPORT_BATCH_SIZE` | 导入批处理行数 | `200` |
-| `IMPORT_MAX_ROWS` | 单个导入允许的数据行上限 | `20000` |
-| `IMPORT_XLS_MAX_BYTES` | 旧版 XLS 的内存安全上限 | `5242880`（5 MB） |
-| `APP_SEED_ENABLED` | 启用演示数据 | 生产必须为 `false` |
-| `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | 生产首次管理员安全初始化 | 生产 Secret；初始化后轮换/移除 |
-| `VITE_API_BASE_URL` | 前端构建时写入的 API 根地址 | `http://localhost:8080/api/v1` |
+| 变量                                                    | 用途                                                        | 本地默认/示例                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| `PORT`                                                  | 后端监听端口（Railway 自动注入）                            | `8080`                                           |
+| `SPRING_PROFILES_ACTIVE`                                | Spring profile                                              | `dev`（仅本地）                                  |
+| `DATABASE_URL`                                          | JDBC PostgreSQL URL                                         | `jdbc:postgresql://localhost:5432/inventory_art` |
+| `DATABASE_USERNAME` / `DATABASE_PASSWORD`               | 数据库凭据                                                  | `inventory` / 本地密码                           |
+| `DATABASE_POOL_SIZE`                                    | Hikari 最大连接数                                           | `3`                                              |
+| `JWT_SECRET`                                            | JWT HMAC 密钥，生产使用高熵随机值                           | 无安全默认值                                     |
+| `JWT_ACCESS_TOKEN_MINUTES`                              | Access Token 有效期                                         | `15`                                             |
+| `JWT_REFRESH_TOKEN_DAYS`                                | Refresh Token 有效期                                        | `30`                                             |
+| `CORS_ALLOWED_ORIGINS`                                  | 逗号分隔的精确前端 Origin                                   | 本地 Vite/Compose 地址                           |
+| `COOKIE_SECURE`                                         | Refresh Cookie 是否只允许 HTTPS                             | 本地 `false`；生产 `true`                        |
+| `STORAGE_PROVIDER`                                      | `local`、`minio` 或 `r2`                                    | Compose 为 `minio`                               |
+| `LOCAL_STORAGE_PATH`                                    | 仅本地文件存储根目录                                        | `./storage-data`                                 |
+| `R2_ENDPOINT`                                           | R2/MinIO S3 endpoint                                        | Compose 为 `http://minio.localhost:9000`         |
+| `R2_PUBLIC_ENDPOINT`                                    | 可选的浏览器预签名 URL endpoint；未设置时沿用 `R2_ENDPOINT` | Compose 为 `http://minio.localhost:9000`         |
+| `R2_REGION`                                             | S3-compatible region                                        | R2 为 `auto`                                     |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`             | 私有 Bucket API 凭据                                        | MinIO 本地凭据                                   |
+| `R2_BUCKET_PRIVATE`                                     | 私有对象 Bucket                                             | `inventory-art`                                  |
+| `R2_PRESIGNED_URL_EXPIRATION_SECONDS`                   | 预签名 URL 有效期                                           | `900`                                            |
+| `IMPORT_MAX_FILE_SIZE`                                  | Spring multipart 请求上限                                   | `20MB`                                           |
+| `IMPORT_MAX_BYTES`                                      | 业务层文件大小上限（字节）                                  | `20971520`                                       |
+| `IMPORT_BATCH_SIZE`                                     | 导入批处理行数                                              | `200`                                            |
+| `IMPORT_MAX_ROWS`                                       | 单个导入允许的数据行上限                                    | `20000`                                          |
+| `IMPORT_XLS_MAX_BYTES`                                  | 旧版 XLS 的内存安全上限                                     | `5242880`（5 MB）                                |
+| `APP_SEED_ENABLED`                                      | 启用演示数据                                                | 生产必须为 `false`                               |
+| `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | 生产首次管理员安全初始化                                    | 生产 Secret；初始化后轮换/移除                   |
+| `VITE_API_BASE_URL`                                     | 前端构建时写入的 API 根地址                                 | `http://localhost:8080/api/v1`                   |
 
 `VITE_*` 是构建时变量；变更生产 API 地址后必须重新构建前端。完整生产设置见 [部署文档](docs/deployment.md)。
 

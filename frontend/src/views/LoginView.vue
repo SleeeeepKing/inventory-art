@@ -34,7 +34,11 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-story">
-      <div class="login-brand"><span class="brand-mark"><span /><b>{{ t('app.shortName') }}</b></span><strong>{{ t('app.name') }}</strong></div>
+      <div class="login-brand">
+        <span class="brand-mark"
+          ><span /><b>{{ t('app.shortName') }}</b></span
+        ><strong>{{ t('app.name') }}</strong>
+      </div>
       <div class="login-story__message">
         <p class="eyebrow">{{ t('app.workspace') }}</p>
         <h1>{{ t('app.tagline') }}</h1>
@@ -62,13 +66,35 @@ async function submit() {
         <p>{{ t('auth.instruction') }}</p>
         <ElForm label-position="top" @submit.prevent="submit">
           <ElFormItem :label="t('auth.email')">
-            <ElInput v-model="form.username" size="large" autocomplete="username" :placeholder="t('auth.emailPlaceholder')" :prefix-icon="Message" />
+            <ElInput
+              v-model="form.username"
+              size="large"
+              autocomplete="username"
+              :placeholder="t('auth.emailPlaceholder')"
+              :prefix-icon="Message"
+            />
           </ElFormItem>
           <ElFormItem :label="t('auth.password')">
-            <ElInput v-model="form.password" size="large" type="password" autocomplete="current-password" show-password :placeholder="t('auth.passwordPlaceholder')" :prefix-icon="Lock" @keyup.enter="submit" />
+            <ElInput
+              v-model="form.password"
+              size="large"
+              type="password"
+              autocomplete="current-password"
+              show-password
+              :placeholder="t('auth.passwordPlaceholder')"
+              :prefix-icon="Lock"
+              @keyup.enter="submit"
+            />
           </ElFormItem>
-          <ElButton class="login-submit" type="primary" size="large" :loading="auth.loading" @click="submit">
-            {{ auth.loading ? t('auth.signingIn') : t('auth.signIn') }}<ArrowRight v-if="!auth.loading" />
+          <ElButton
+            class="login-submit"
+            type="primary"
+            size="large"
+            :loading="auth.loading"
+            @click="submit"
+          >
+            {{ auth.loading ? t('auth.signingIn') : t('auth.signIn')
+            }}<ArrowRight v-if="!auth.loading" />
           </ElButton>
         </ElForm>
         <small class="secure-note"><Lock />{{ t('auth.secureSession') }}</small>

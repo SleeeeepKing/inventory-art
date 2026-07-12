@@ -13,8 +13,12 @@ import StatusPill from '@/components/StatusPill.vue'
 
 type Row = Record<string, unknown>
 type DataType = 'products' | 'orders' | 'inventory' | 'external-transactions' | 'imports'
-const { t } = useI18n(); const { showError } = useApiFeedback(); const { money, number, dateTime } = useFormatters()
-const start = new Date(); start.setDate(start.getDate() - 29); start.setHours(0, 0, 0, 0)
+const { t } = useI18n()
+const { showError } = useApiFeedback()
+const { money, number, dateTime } = useFormatters()
+const start = new Date()
+start.setDate(start.getDate() - 29)
+start.setHours(0, 0, 0, 0)
 const rows = ref<PageResponse<Row>>(normalizePage([]))
 const tenants = ref<AdminTenant[]>([])
 const users = ref<UserProfile[]>([])
@@ -28,74 +32,211 @@ const eventId = ref('')
 const range = ref<[Date, Date]>([start, new Date()])
 const dataType = ref<DataType>('orders')
 let userSearchTimer: ReturnType<typeof setTimeout> | undefined
-const tabs = [{ value: 'orders', key: 'admin.orders' }, { value: 'inventory', key: 'admin.inventory' }, { value: 'products', key: 'admin.products' }, { value: 'external-transactions', key: 'admin.transactions' }, { value: 'imports', key: 'admin.imports' }] as const
+const tabs = [
+  { value: 'orders', key: 'admin.orders' },
+  { value: 'inventory', key: 'admin.inventory' },
+  { value: 'products', key: 'admin.products' },
+  { value: 'external-transactions', key: 'admin.transactions' },
+  { value: 'imports', key: 'admin.imports' },
+] as const
 const supportsOperationalFilters = computed(() => ['orders', 'inventory'].includes(dataType.value))
-function text(row: Row, key: string) { const value = row[key]; return value == null || value === '' ? '—' : String(value) }
-function numeric(row: Row, key: string) { return Number(row[key] || 0) }
-function endpoint() { return dataType.value === 'inventory' ? '/admin/inventory/movements' : `/admin/${dataType.value}` }
+function text(row: Row, key: string) {
+  const value = row[key]
+  return value == null || value === '' ? '—' : String(value)
+}
+function numeric(row: Row, key: string) {
+  return Number(row[key] || 0)
+}
+function endpoint() {
+  return dataType.value === 'inventory' ? '/admin/inventory/movements' : `/admin/${dataType.value}`
+}
 function queryBounds() {
-  const from = new Date(range.value[0]); from.setHours(0, 0, 0, 0)
-  const to = new Date(range.value[1]); to.setDate(to.getDate() + 1); to.setHours(0, 0, 0, 0)
+  const from = new Date(range.value[0])
+  from.setHours(0, 0, 0, 0)
+  const to = new Date(range.value[1])
+  to.setDate(to.getDate() + 1)
+  to.setHours(0, 0, 0, 0)
   return { from: from.toISOString(), to: to.toISOString() }
 }
 async function load() {
   loading.value = true
   try {
-    const params = { page: currentPage.value - 1, size: 20, tenantId: tenantId.value || undefined, userId: supportsOperationalFilters.value && userId.value ? userId.value : undefined, channel: supportsOperationalFilters.value && channel.value ? channel.value : undefined, eventId: supportsOperationalFilters.value && eventId.value ? eventId.value : undefined, ...(supportsOperationalFilters.value ? queryBounds() : {}) }
+    const params = {
+      page: currentPage.value - 1,
+      size: 20,
+      tenantId: tenantId.value || undefined,
+      userId: supportsOperationalFilters.value && userId.value ? userId.value : undefined,
+      channel: supportsOperationalFilters.value && channel.value ? channel.value : undefined,
+      eventId: supportsOperationalFilters.value && eventId.value ? eventId.value : undefined,
+      ...(supportsOperationalFilters.value ? queryBounds() : {}),
+    }
     const { data } = await api.get<PageResponse<Row>>(endpoint(), { params })
     rows.value = normalizePage(data)
-  } catch (error) { rows.value = normalizePage([]); showError(error) } finally { loading.value = false }
+  } catch (error) {
+    rows.value = normalizePage([])
+    showError(error)
+  } finally {
+    loading.value = false
+  }
 }
+
+function reloadFirstPage() {
+  currentPage.value = 1
+  void load()
+}
+
 async function loadTenants() {
-  const { data } = await api.get<PageResponse<AdminTenant>>('/admin/tenants', { params: { page: 0, size: 100 } })
+  const { data } = await api.get<PageResponse<AdminTenant>>('/admin/tenants', {
+    params: { page: 0, size: 100 },
+  })
   tenants.value = normalizePage(data).items
 }
 async function changeTenant() {
-  userId.value = ''; eventId.value = ''; users.value = []; events.value = []
+  userId.value = ''
+  eventId.value = ''
+  users.value = []
+  events.value = []
   if (tenantId.value) {
     await searchUsersNow('')
-    const eventResponse = await api.get<SalesEvent[]>('/admin/sales-events', { params: { tenantId: tenantId.value } })
+    const eventResponse = await api.get<SalesEvent[]>('/admin/sales-events', {
+      params: { tenantId: tenantId.value },
+    })
     events.value = eventResponse.data
   }
   currentPage.value = 1
   await load()
 }
 async function searchUsersNow(query: string) {
-  if (!tenantId.value) { users.value = []; return }
-  const { data } = await api.get<PageResponse<UserProfile>>('/admin/users', { params: { tenantId: tenantId.value, q: query || undefined, page: 0, size: 20 } })
+  if (!tenantId.value) {
+    users.value = []
+    return
+  }
+  const { data } = await api.get<PageResponse<UserProfile>>('/admin/users', {
+    params: { tenantId: tenantId.value, q: query || undefined, page: 0, size: 20 },
+  })
   users.value = normalizePage(data).items
 }
 function searchUsers(query: string) {
   if (userSearchTimer) clearTimeout(userSearchTimer)
-  userSearchTimer = setTimeout(() => { void searchUsersNow(query) }, query ? 250 : 0)
+  userSearchTimer = setTimeout(
+    () => {
+      void searchUsersNow(query)
+    },
+    query ? 250 : 0,
+  )
 }
-function changeChannel() { if (channel.value !== 'EXHIBITION') eventId.value = ''; currentPage.value = 1; void load() }
-function changeType() { currentPage.value = 1; void load() }
-onMounted(async () => { try { await loadTenants(); await load() } catch (error) { showError(error) } })
+function changeChannel() {
+  if (channel.value !== 'EXHIBITION') eventId.value = ''
+  currentPage.value = 1
+  void load()
+}
+function changeType() {
+  currentPage.value = 1
+  void load()
+}
+function selectType(value: DataType) {
+  dataType.value = value
+  changeType()
+}
+onMounted(async () => {
+  try {
+    await loadTenants()
+    await load()
+  } catch (error) {
+    showError(error)
+  }
+})
 </script>
 
 <template>
   <div class="page-stack">
-    <PageHeader :eyebrow="t('nav.management')" :title="t('admin.globalTitle')" :subtitle="t('admin.globalSubtitle')" />
+    <PageHeader
+      :eyebrow="t('nav.management')"
+      :title="t('admin.globalTitle')"
+      :subtitle="t('admin.globalSubtitle')"
+    />
     <ElAlert :title="t('admin.crossTenantNotice')" type="warning" show-icon :closable="false" />
     <section class="panel data-panel">
       <div class="data-tabs">
-        <button v-for="tab in tabs" :key="tab.value" type="button" :class="{ active: dataType === tab.value }" @click="dataType = tab.value; changeType()">
+        <button
+          v-for="tab in tabs"
+          :key="tab.value"
+          type="button"
+          :class="{ active: dataType === tab.value }"
+          @click="selectType(tab.value)"
+        >
           {{ t(tab.key) }}
         </button>
       </div>
       <div class="table-toolbar">
-        <ElSelect v-model="tenantId" clearable :placeholder="t('common.tenant')" @change="changeTenant">
-          <ElOption v-for="tenant in tenants" :key="tenant.id" :label="tenant.name" :value="tenant.id" />
+        <ElSelect
+          v-model="tenantId"
+          clearable
+          :placeholder="t('common.tenant')"
+          @change="changeTenant"
+        >
+          <ElOption
+            v-for="tenant in tenants"
+            :key="tenant.id"
+            :label="tenant.name"
+            :value="tenant.id"
+          />
         </ElSelect>
-        <ElSelect v-if="supportsOperationalFilters" v-model="userId" clearable filterable remote :remote-method="searchUsers" :disabled="!tenantId" :placeholder="t('admin.userFilter')" @change="currentPage = 1; load()"><ElOption v-for="user in users" :key="user.id" :label="`${user.displayName} · ${user.username || user.email}`" :value="user.id" /></ElSelect>
-        <ElDatePicker v-if="supportsOperationalFilters" v-model="range" type="daterange" :range-separator="'—'" :start-placeholder="t('admin.fromDate')" :end-placeholder="t('admin.toDate')" @change="currentPage = 1; load()" />
-        <ElSelect v-if="supportsOperationalFilters" v-model="channel" clearable :placeholder="t('orders.channel')" @change="changeChannel"><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption :label="t('orders.channels.online')" value="ONLINE" /><ElOption :label="t('orders.channels.other')" value="OTHER" /></ElSelect>
-        <ElSelect v-if="supportsOperationalFilters && channel === 'EXHIBITION'" v-model="eventId" clearable filterable :disabled="!tenantId" :placeholder="t('orders.event')" @change="currentPage = 1; load()"><ElOption v-for="event in events" :key="event.id" :label="`${event.name} · ${event.startDate} — ${event.endDate}`" :value="event.id" /></ElSelect>
+        <ElSelect
+          v-if="supportsOperationalFilters"
+          v-model="userId"
+          clearable
+          filterable
+          remote
+          :remote-method="searchUsers"
+          :disabled="!tenantId"
+          :placeholder="t('admin.userFilter')"
+          @change="reloadFirstPage"
+          ><ElOption
+            v-for="user in users"
+            :key="user.id"
+            :label="`${user.displayName} · ${user.username || user.email}`"
+            :value="user.id"
+        /></ElSelect>
+        <ElDatePicker
+          v-if="supportsOperationalFilters"
+          v-model="range"
+          type="daterange"
+          :range-separator="'—'"
+          :start-placeholder="t('admin.fromDate')"
+          :end-placeholder="t('admin.toDate')"
+          @change="reloadFirstPage"
+        />
+        <ElSelect
+          v-if="supportsOperationalFilters"
+          v-model="channel"
+          clearable
+          :placeholder="t('orders.channel')"
+          @change="changeChannel"
+          ><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption
+            :label="t('orders.channels.online')"
+            value="ONLINE" /><ElOption :label="t('orders.channels.other')" value="OTHER"
+        /></ElSelect>
+        <ElSelect
+          v-if="supportsOperationalFilters && channel === 'EXHIBITION'"
+          v-model="eventId"
+          clearable
+          filterable
+          :disabled="!tenantId"
+          :placeholder="t('orders.event')"
+          @change="reloadFirstPage"
+          ><ElOption
+            v-for="event in events"
+            :key="event.id"
+            :label="`${event.name} · ${event.startDate} — ${event.endDate}`"
+            :value="event.id"
+        /></ElSelect>
         <ElButton :icon="RefreshRight" @click="load">
           {{ t('common.refresh') }}
         </ElButton>
-        <span class="table-toolbar__count">{{ t('common.items', { count: rows.totalElements }) }}</span>
+        <span class="table-toolbar__count">{{
+          t('common.items', { count: rows.totalElements })
+        }}</span>
       </div>
       <ElTable v-if="rows.items.length || loading" v-loading="loading" :data="rows.items">
         <template v-if="dataType === 'products'">
@@ -136,13 +277,34 @@ onMounted(async () => { try { await loadTenants(); await load() } catch (error) 
         </template>
         <template v-else-if="dataType === 'inventory'">
           <ElTableColumn prop="tenantName" :label="t('common.tenant')" min-width="150" />
-          <ElTableColumn :label="t('inventory.product')" min-width="220"><template #default="scope"><div class="cell-stack"><strong>{{ text(scope.row, 'productName') }}</strong><code class="sku-code">{{ text(scope.row, 'productSku') }}</code></div></template></ElTableColumn>
+          <ElTableColumn :label="t('inventory.product')" min-width="220"
+            ><template #default="scope"
+              ><div class="cell-stack">
+                <strong>{{ text(scope.row, 'productName') }}</strong
+                ><code class="sku-code">{{ text(scope.row, 'productSku') }}</code>
+              </div></template
+            ></ElTableColumn
+          >
           <ElTableColumn prop="operatorName" :label="t('admin.operator')" min-width="150" />
           <ElTableColumn prop="type" :label="t('inventory.movement')" min-width="140" />
-          <ElTableColumn :label="t('inventory.quantity')" align="right" width="100"><template #default="scope">{{ number(numeric(scope.row, 'quantity')) }}</template></ElTableColumn>
+          <ElTableColumn :label="t('inventory.quantity')" align="right" width="100"
+            ><template #default="scope">{{
+              number(numeric(scope.row, 'quantity'))
+            }}</template></ElTableColumn
+          >
           <ElTableColumn prop="eventName" :label="t('orders.event')" min-width="200" />
-          <ElTableColumn :label="t('inventory.actualPrice')" align="right" min-width="130"><template #default="scope">{{ scope.row.unitPrice == null ? '—' : money(numeric(scope.row, 'unitPrice'), text(scope.row, 'currency')) }}</template></ElTableColumn>
-          <ElTableColumn :label="t('common.date')" min-width="170"><template #default="scope">{{ dateTime(text(scope.row, 'createdAt')) }}</template></ElTableColumn>
+          <ElTableColumn :label="t('inventory.actualPrice')" align="right" min-width="130"
+            ><template #default="scope">{{
+              scope.row.unitPrice == null
+                ? '—'
+                : money(numeric(scope.row, 'unitPrice'), text(scope.row, 'currency'))
+            }}</template></ElTableColumn
+          >
+          <ElTableColumn :label="t('common.date')" min-width="170"
+            ><template #default="scope">{{
+              dateTime(text(scope.row, 'createdAt'))
+            }}</template></ElTableColumn
+          >
         </template>
         <template v-else>
           <ElTableColumn prop="id" :label="t('common.details')" min-width="230" />

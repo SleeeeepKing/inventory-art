@@ -1,3 +1,35 @@
 package com.inventoryart.audit;
-import com.inventoryart.common.PageResponse;import org.springframework.data.domain.*;import org.springframework.web.bind.annotation.*;import java.util.*;
-@RestController @RequestMapping("/api/v1/admin/audit") public class AdminAuditController{private final AuditLogRepository logs;private final AuditService audit;public AdminAuditController(AuditLogRepository logs,AuditService audit){this.logs=logs;this.audit=audit;}@GetMapping public PageResponse<AuditController.Response> list(@RequestParam(required=false)UUID tenantId,@RequestParam(required=false)String action,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="50")int size){var result=logs.search(tenantId,action,PageRequest.of(page,Math.min(size,100),Sort.by(Sort.Direction.DESC,"createdAt"))).map(AuditController.Response::from);audit.record(tenantId,"ADMIN_AUDIT_LIST","AUDIT_LOG",null,"SUCCESS",Map.of("page",page));return PageResponse.of(result);}}
+
+import com.inventoryart.common.PageResponse;
+import java.util.*;
+import org.springframework.data.domain.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/v1/admin/audit")
+public class AdminAuditController {
+  private final AuditLogRepository logs;
+  private final AuditService audit;
+
+  public AdminAuditController(AuditLogRepository logs, AuditService audit) {
+    this.logs = logs;
+    this.audit = audit;
+  }
+
+  @GetMapping
+  public PageResponse<AuditController.Response> list(
+      @RequestParam(required = false) UUID tenantId,
+      @RequestParam(required = false) String action,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "50") int size) {
+    var result =
+        logs.search(
+                tenantId,
+                action,
+                PageRequest.of(
+                    page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createdAt")))
+            .map(AuditController.Response::from);
+    audit.record(tenantId, "ADMIN_AUDIT_LIST", "AUDIT_LOG", null, "SUCCESS", Map.of("page", page));
+    return PageResponse.of(result);
+  }
+}

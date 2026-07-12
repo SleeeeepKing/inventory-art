@@ -4,13 +4,13 @@
 
 系统把浏览器、上传文件、JWT 声明、请求中的资源 ID 和第三方导出内容都视为不可信输入。只有后端认证上下文、数据库约束和服务端重算结果可以决定 Tenant、权限、库存和金额。
 
-| 边界 | 主要风险 | 控制措施 |
-| --- | --- | --- |
-| Browser → API | 越权 ID、伪造金额、Token 窃取、暴力登录 | Spring Security、DTO 校验、服务端金额计算、限流、短期 JWT、HttpOnly Refresh Cookie |
-| USER → 其他 Tenant | IDOR、跨 Tenant 文件/映射访问 | 认证上下文 Tenant、Tenant-aware Repository、组合外键、隔离集成测试 |
-| ADMIN → 全局数据 | 权限滥用、不可追溯修复 | 独立 ADMIN API/Service、角色注解、跨 Tenant 审计 |
-| 文件 → Parser/Storage | 恶意格式、超大文件、敏感数据泄露 | allowlist、大小/MIME/扩展名校验、流式解析、私有对象、原始数据清理 |
-| API → PostgreSQL/R2 | 密钥泄露、明文连接、公共对象 | 部署平台 Secret、TLS、最小权限 R2 Token、私有 Bucket、短期预签名 URL |
+| 边界                  | 主要风险                                | 控制措施                                                                           |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------- |
+| Browser → API         | 越权 ID、伪造金额、Token 窃取、暴力登录 | Spring Security、DTO 校验、服务端金额计算、限流、短期 JWT、HttpOnly Refresh Cookie |
+| USER → 其他 Tenant    | IDOR、跨 Tenant 文件/映射访问           | 认证上下文 Tenant、Tenant-aware Repository、组合外键、隔离集成测试                 |
+| ADMIN → 全局数据      | 权限滥用、不可追溯修复                  | 独立 ADMIN API/Service、角色注解、跨 Tenant 审计                                   |
+| 文件 → Parser/Storage | 恶意格式、超大文件、敏感数据泄露        | allowlist、大小/MIME/扩展名校验、流式解析、私有对象、原始数据清理                  |
+| API → PostgreSQL/R2   | 密钥泄露、明文连接、公共对象            | 部署平台 Secret、TLS、最小权限 R2 Token、私有 Bucket、短期预签名 URL               |
 
 ## Tenant 解析与访问规则
 
@@ -107,18 +107,18 @@ Refresh 和 Logout 会自动携带 Cookie，因此服务端必须校验请求 `O
 
 关键隔离测试必须使用两个真实 Tenant 和 Testcontainers PostgreSQL：
 
-| 场景 | 期望 |
-| --- | --- |
-| 用户 A 读取/修改用户 B 商品 | 404，B 数据不变 |
-| 用户 A 调整用户 B 库存 | 404，无库存流水 |
-| 用户 A 读取用户 B 订单 | 404 |
-| 用户 A 读取 ImportBatch/错误 CSV | 404，不返回文件 URL |
-| 用户 A 修改用户 B 商品映射 | 404，映射不变 |
-| 用户 A 请求用户 B 文件 PUT/GET/Delete | 404，不生成预签名 URL |
-| 两个 Tenant 使用相同 SKU/外部交易号 | 分别成功且互不影响 |
-| ADMIN 查询两个 Tenant | 成功并生成跨 Tenant 审计 |
-| 禁用用户使用旧 Refresh Token | 拒绝并撤销会话 |
-| 旧 Refresh Token 被重放 | 整个令牌族撤销 |
+| 场景                                  | 期望                     |
+| ------------------------------------- | ------------------------ |
+| 用户 A 读取/修改用户 B 商品           | 404，B 数据不变          |
+| 用户 A 调整用户 B 库存                | 404，无库存流水          |
+| 用户 A 读取用户 B 订单                | 404                      |
+| 用户 A 读取 ImportBatch/错误 CSV      | 404，不返回文件 URL      |
+| 用户 A 修改用户 B 商品映射            | 404，映射不变            |
+| 用户 A 请求用户 B 文件 PUT/GET/Delete | 404，不生成预签名 URL    |
+| 两个 Tenant 使用相同 SKU/外部交易号   | 分别成功且互不影响       |
+| ADMIN 查询两个 Tenant                 | 成功并生成跨 Tenant 审计 |
+| 禁用用户使用旧 Refresh Token          | 拒绝并撤销会话           |
+| 旧 Refresh Token 被重放               | 整个令牌族撤销           |
 
 测试同时断言响应状态、数据库副作用和审计副作用，不能只检查前端菜单是否隐藏。
 

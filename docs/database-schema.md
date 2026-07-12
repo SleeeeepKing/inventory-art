@@ -42,48 +42,48 @@ erDiagram
 
 ### 身份与 Tenant
 
-| 表 | 目的与关键字段 | 关键约束 |
-| --- | --- | --- |
-| `tenants` | 工作空间；名称、slug、默认币种、时区、业务 locale、启用状态 | `slug` 全局唯一；默认 EUR / Europe/Paris；`locale` 不等同于 UI 语言 |
-| `users` | 登录身份；可选 Tenant、用户名、邮箱、密码哈希、角色、UI 语言 | 用户名/邮箱全局唯一；USER 必须有 Tenant；`preferred_locale IN ('en','zh-CN','fr-FR')` 且默认 `en` |
-| `refresh_tokens` | Refresh Token 哈希、令牌族、轮换和撤销状态 | `token_hash` 唯一；按 `(user_id,family_id)` 索引；不保存明文 Token |
+| 表               | 目的与关键字段                                               | 关键约束                                                                                          |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `tenants`        | 工作空间；名称、slug、默认币种、时区、业务 locale、启用状态  | `slug` 全局唯一；默认 EUR / Europe/Paris；`locale` 不等同于 UI 语言                               |
+| `users`          | 登录身份；可选 Tenant、用户名、邮箱、密码哈希、角色、UI 语言 | 用户名/邮箱全局唯一；USER 必须有 Tenant；`preferred_locale IN ('en','zh-CN','fr-FR')` 且默认 `en` |
+| `refresh_tokens` | Refresh Token 哈希、令牌族、轮换和撤销状态                   | `token_hash` 唯一；按 `(user_id,family_id)` 索引；不保存明文 Token                                |
 
 ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_tokens` 不重复存 `tenant_id`，其安全范围通过不可变的 `user_id` 外键解析。
 
 ### 商品与库存
 
-| 表 | 目的与关键字段 | 关键约束/索引 |
-| --- | --- | --- |
-| `products` | 商品资料、售价/成本、当前库存、低库存阈值、乐观锁版本 | `UNIQUE(tenant_id,sku)`；`current_stock >= 0`；Tenant + enabled + name 索引 |
-| `sales_events` | 展会名称、开始/结束日期和启用状态 | Tenant 内名称唯一；`end_date >= start_date`；Tenant + end_date 索引 |
-| `inventory_sale_batches` | 渠道、展会 ID/名称快照、币种、分析归属日、备注和操作人 | 展会使用 Tenant 组合外键；按日期/渠道/展会索引 |
-| `inventory_movements` | 每次独立库存调整的前后值、类型、数量、售出批次、实际单价和操作人 | `stock_after >= 0`、`unit_price >= 0`；Tenant + product/operator/date 索引；记录不可物理删除 |
+| 表                       | 目的与关键字段                                                   | 关键约束/索引                                                                                |
+| ------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `products`               | 商品资料、售价/成本、当前库存、低库存阈值、乐观锁版本            | `UNIQUE(tenant_id,sku)`；`current_stock >= 0`；Tenant + enabled + name 索引                  |
+| `sales_events`           | 展会名称、开始/结束日期和启用状态                                | Tenant 内名称唯一；`end_date >= start_date`；Tenant + end_date 索引                          |
+| `inventory_sale_batches` | 渠道、展会 ID/名称快照、币种、分析归属日、备注和操作人           | 展会使用 Tenant 组合外键；按日期/渠道/展会索引                                               |
+| `inventory_movements`    | 每次独立库存调整的前后值、类型、数量、售出批次、实际单价和操作人 | `stock_after >= 0`、`unit_price >= 0`；Tenant + product/operator/date 索引；记录不可物理删除 |
 
 `products.current_stock` 是便于读取的当前快照，`inventory_movements` 是审计来源。售出批次先写 `inventory_sale_batches`，再为每个商品写负向 `SALE` 流水；同一事务中任一库存不足会回滚全部记录。展会批次的 `attributed_date` 固定为 `sales_events.end_date`，线上/其他渠道使用提交时 Tenant 本地日期。
 
 ### 订单、支付和退款
 
-| 表 | 目的与关键字段 | 关键约束/索引 |
-| --- | --- | --- |
-| `orders` | 订单号、来源、状态、分配状态、展会、渠道、录入人、客户快照、必填金额和币种 | `UNIQUE(tenant_id,order_number)`；Tenant + 渠道/录入人/日期索引；`version` 乐观锁 |
-| `order_items` | 商品关联与 SKU/名称快照、单价、数量、税/折扣/行总额、已退款数量 | Tenant 组合外键到订单和商品；`quantity > 0` |
-| `payments` | 订单支付、provider 交易号、金额、币种、方式和状态 | Tenant 组合外键到订单 |
-| `order_refunds` | 订单级退款金额、原因和操作人 | Tenant 组合外键到订单；保留历史 |
-| `order_refund_items` | 部分/全额退款对应的订单项、数量和金额 | Tenant 组合外键到退款和订单项；`quantity > 0` |
+| 表                   | 目的与关键字段                                                             | 关键约束/索引                                                                     |
+| -------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `orders`             | 订单号、来源、状态、分配状态、展会、渠道、录入人、客户快照、必填金额和币种 | `UNIQUE(tenant_id,order_number)`；Tenant + 渠道/录入人/日期索引；`version` 乐观锁 |
+| `order_items`        | 商品关联与 SKU/名称快照、单价、数量、税/折扣/行总额、已退款数量            | Tenant 组合外键到订单和商品；`quantity > 0`                                       |
+| `payments`           | 订单支付、provider 交易号、金额、币种、方式和状态                          | Tenant 组合外键到订单                                                             |
+| `order_refunds`      | 订单级退款金额、原因和操作人                                               | Tenant 组合外键到订单；保留历史                                                   |
+| `order_refund_items` | 部分/全额退款对应的订单项、数量和金额                                      | Tenant 组合外键到退款和订单项；`quantity > 0`                                     |
 
 订单可以没有 `order_items`。有商品时会保留名称和 SKU 快照，因此商品之后改名不会改变历史单据。`inventory_applied` 与库存流水中的订单/导入关联列仅为兼容历史数据保留；新订单和新导入始终不应用库存。`manually_modified_after_import` 用于判断导入能否自动撤销。
 
 ### SumUp 与外部销售
 
-| 表 | 目的与关键字段 | 关键约束/索引 |
-| --- | --- | --- |
-| `import_batches` | 文件、checksum、类型、展会 ID/名称快照、分析版本、状态和汇总计数 | `UNIQUE(tenant_id,source_provider,file_checksum)`；Tenant + status/event + created_at 索引 |
-| `import_rows` | 分批持久化的标准化行、已清理原始数据、错误、关联订单/商品 | `UNIQUE(tenant_id,import_batch_id,row_number)`；批次 + 状态索引 |
-| `import_column_mappings` | 此批次源列到规范字段的映射 | `UNIQUE(tenant_id,import_batch_id,source_column)` |
-| `external_transactions` | SumUp 交易状态、金额、费用、支付信息、fingerprint、清理后的 JSON | 非空 provider ID 的部分唯一索引；Tenant + provider + fingerprint 唯一 |
-| `external_product_mappings` | 外部商品名/reference 到内部商品的 Tenant 私有映射 | `UNIQUE(tenant_id,provider,normalized_external_name)` |
-| `imported_sales_summaries` | 产品/周期销售汇总，只用于对账，不应用库存 | Tenant 组合外键到批次和商品 |
-| `imported_accounting_summaries` | 日期/支付方式/税率汇总，用于会计对账 | Tenant 组合外键到批次；不生成订单或库存 |
+| 表                              | 目的与关键字段                                                   | 关键约束/索引                                                                              |
+| ------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `import_batches`                | 文件、checksum、类型、展会 ID/名称快照、分析版本、状态和汇总计数 | `UNIQUE(tenant_id,source_provider,file_checksum)`；Tenant + status/event + created_at 索引 |
+| `import_rows`                   | 分批持久化的标准化行、已清理原始数据、错误、关联订单/商品        | `UNIQUE(tenant_id,import_batch_id,row_number)`；批次 + 状态索引                            |
+| `import_column_mappings`        | 此批次源列到规范字段的映射                                       | `UNIQUE(tenant_id,import_batch_id,source_column)`                                          |
+| `external_transactions`         | SumUp 交易状态、金额、费用、支付信息、fingerprint、清理后的 JSON | 非空 provider ID 的部分唯一索引；Tenant + provider + fingerprint 唯一                      |
+| `external_product_mappings`     | 外部商品名/reference 到内部商品的 Tenant 私有映射                | `UNIQUE(tenant_id,provider,normalized_external_name)`                                      |
+| `imported_sales_summaries`      | 产品/周期销售汇总，只用于对账，不应用库存                        | Tenant 组合外键到批次和商品                                                                |
+| `imported_accounting_summaries` | 日期/支付方式/税率汇总，用于会计对账                             | Tenant 组合外键到批次；不生成订单或库存                                                    |
 
 `external_transactions` 的两层幂等键：
 
@@ -96,10 +96,10 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 
 ### 文件与审计
 
-| 表 | 目的与关键字段 | 关键约束/索引 |
-| --- | --- | --- |
+| 表             | 目的与关键字段                                                          | 关键约束/索引                                                            |
+| -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `stored_files` | 对象 key、原文件名、类型、大小、checksum、用途、确认/删除状态和资源关联 | `object_key` 全局唯一；Tenant + resource 索引；对象内容不进入 PostgreSQL |
-| `audit_logs` | actor、角色、动作、资源、结果、IP、User-Agent、清理后 metadata | Tenant + 日期、actor + 日期索引；ADMIN 全局动作允许 Tenant 为空 |
+| `audit_logs`   | actor、角色、动作、资源、结果、IP、User-Agent、清理后 metadata          | Tenant + 日期、actor + 日期索引；ADMIN 全局动作允许 Tenant 为空          |
 
 数据库只保存对象 metadata。`stored_files.status`、`confirmed_at` 和 `deleted_at` 支持临时上传确认、软删除与清理；Bucket 默认私有。
 

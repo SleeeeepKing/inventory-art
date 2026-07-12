@@ -1,1 +1,6 @@
-package com.inventoryart.order;import org.springframework.data.jpa.repository.JpaRepository;import java.util.UUID;public interface OrderRefundRepository extends JpaRepository<OrderRefund,UUID>{}
+package com.inventoryart.order;
+
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface OrderRefundRepository extends JpaRepository<OrderRefund, UUID> {}
