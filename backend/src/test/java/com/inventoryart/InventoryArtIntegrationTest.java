@@ -81,6 +81,42 @@ class InventoryArtIntegrationTest {
         assertThat(products.findById(other.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
     }
 
+    @Test void salesEventsAreTenantScopedFilterOrdersAndRejectDisabledEvents() throws Exception {
+        Fixture first=fixture("event-first"),second=fixture("event-second");Product product=product(first,"EVENT",5);
+        String created=mvc.perform(post("/api/v1/sales-events").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"JAPAN EXPO PARIS 2026\"}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value("JAPAN EXPO PARIS 2026"))
+            .andReturn().getResponse().getContentAsString();
+        UUID eventId=UUID.fromString(json.readTree(created).get("id").asText());
+
+        mvc.perform(get("/api/v1/sales-events").with(userJwt(second)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(put("/api/v1/sales-events/{id}",eventId).with(userJwt(second)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Changed\",\"enabled\":true}"))
+            .andExpect(status().isNotFound());
+
+        String order=json.writeValueAsString(Map.of(
+            "items",List.of(Map.of("productId",product.getId(),"quantity",1,"unitPrice",10,"discountAmount",0,"taxRate",0)),
+            "salesChannel","EXHIBITION","eventId",eventId,"currency","EUR",
+            "paymentMethod","CARD","paymentStatus","PAID","orderDate",Instant.now().toString()));
+        mvc.perform(post("/api/v1/orders").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(order))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.eventId").value(eventId.toString()))
+            .andExpect(jsonPath("$.eventName").value("JAPAN EXPO PARIS 2026"))
+            .andExpect(jsonPath("$.salesChannel").value("EXHIBITION"));
+        mvc.perform(get("/api/v1/orders").param("eventId",eventId.toString()).with(userJwt(first)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.items[0].eventName").value("JAPAN EXPO PARIS 2026"));
+
+        mvc.perform(post("/api/v1/sales-events/{id}/enabled",eventId).with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":false}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        mvc.perform(get("/api/v1/sales-events").with(userJwt(first)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(post("/api/v1/orders").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(order))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SALES_EVENT_DISABLED"));
+    }
+
     @Test void defaultProductSearchAndDashboardReportUsePostgresTypesSafely() throws Exception {
         Fixture f=fixture("api-defaults");product(f,"SEARCH-DEFAULT",3);
         mvc.perform(get("/api/v1/products").with(userJwt(f)))
@@ -97,7 +133,7 @@ class InventoryArtIntegrationTest {
 
     @Test void orderConfirmationCancellationAndRefundAreInventorySafe() {
         Fixture f=fixture("orders");Product p=product(f,"SKU-ORDER",10);
-        OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.ONLINE,null,"Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+        OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.ONLINE,null,null,"Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
         var draft=orderService.create(f.tenant.getId(),f.user.getId(),req);var confirmed=orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id());
         assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
         assertThat(payments.existsByTenantIdAndOrderId(f.tenant.getId(),draft.id())).isTrue();
@@ -107,7 +143,7 @@ class InventoryArtIntegrationTest {
     }
 
     @Test void insufficientStockRollsBackOrderConfirmation() {
-        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());var draft=orderService.create(f.tenant.getId(),f.user.getId(),req);
+        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());var draft=orderService.create(f.tenant.getId(),f.user.getId(),req);
         assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id())).hasMessageContaining("Insufficient");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);
     }
 
@@ -158,7 +194,7 @@ class InventoryArtIntegrationTest {
         Fixture f=fixture("report-cost");Product p=product(f,"REPORT-COST",10);
         OrderDtos.Request request=new OrderDtos.Request(
             List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),
-            SalesChannel.EXHIBITION,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+            SalesChannel.EXHIBITION,null,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
         var draft=orderService.create(f.tenant.getId(),f.user.getId(),request);
         var confirmed=orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id());
         orderService.refund(f.tenant.getId(),f.user.getId(),draft.id(),

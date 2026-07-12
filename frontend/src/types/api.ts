@@ -105,6 +105,8 @@ export interface Order {
   source?: string
   channel?: string
   salesChannel?: string
+  eventId?: string
+  eventName?: string
   customerName?: string
   customerEmail?: string
   currency: string
@@ -117,6 +119,14 @@ export interface Order {
   orderedAt?: string
   orderDate: string
   createdAt?: string
+}
+
+export interface SalesEvent {
+  id: string
+  name: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ImportBatch {
