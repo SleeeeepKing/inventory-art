@@ -50,6 +50,18 @@ public class FileController {
     return ResponseEntity.noContent().build();
   }
 
+  @PutMapping("/{fileId}/content")
+  public ResponseEntity<Void> upload(
+      @PathVariable UUID fileId,
+      @RequestHeader(HttpHeaders.CONTENT_TYPE) String contentType,
+      @RequestHeader("X-Content-Sha256") String checksum,
+      HttpServletRequest request)
+      throws IOException {
+    files.receiveAuthenticatedUpload(
+        fileId, request.getInputStream(), request.getContentLengthLong(), contentType, checksum);
+    return ResponseEntity.noContent().build();
+  }
+
   @PutMapping("/local")
   public ResponseEntity<Void> localUpload(
       @RequestParam String objectKey,
