@@ -181,7 +181,8 @@ public class InventoryController {
     return PageResponse.of(
         result.map(
             movement -> {
-              InventorySaleBatch batch = batches.get(movement.getSaleBatchId());
+              UUID saleBatchId = movement.getSaleBatchId();
+              InventorySaleBatch batch = saleBatchId == null ? null : batches.get(saleBatchId);
               return MovementResponse.from(
                   movement, batch, batch == null ? null : eventNames.get(batch.getEventId()));
             }));
@@ -211,7 +212,8 @@ public class InventoryController {
       Map<UUID, String> eventNames = eventNames(tenantId, batches.values().stream().toList());
       result.forEach(
           movement -> {
-            InventorySaleBatch batch = batches.get(movement.getSaleBatchId());
+            UUID saleBatchId = movement.getSaleBatchId();
+            InventorySaleBatch batch = saleBatchId == null ? null : batches.get(saleBatchId);
             writer.printf(
                 "%s,%s,%s,%d,%d,%d,\"%s\",%s,\"%s\",\"%s\"%n",
                 movement.getCreatedAt(),

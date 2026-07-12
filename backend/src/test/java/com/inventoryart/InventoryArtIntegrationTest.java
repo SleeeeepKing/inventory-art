@@ -276,6 +276,28 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
+  void movementListAndExportSupportMovementsWithoutSaleBatch() throws Exception {
+    Fixture fixture = fixture("movement");
+    Product product = product(fixture, "MOVEMENT", 10);
+
+    mvc.perform(
+            get("/api/v1/inventory/movements")
+                .with(userJwt(fixture))
+                .param("productId", product.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.items[0].type").value("INITIAL"))
+        .andExpect(jsonPath("$.items[0].saleBatchId").doesNotExist());
+
+    String csv =
+        mvc.perform(get("/api/v1/inventory/export").with(userJwt(fixture)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(csv).contains("," + product.getId() + ",INITIAL,");
+  }
+
+  @Test
   void inventorySaleRollsBackWhenAnyProductHasInsufficientStock() throws Exception {
     Fixture fixture = fixture("rollback");
     Product first = product(fixture, "FIRST", 4);
