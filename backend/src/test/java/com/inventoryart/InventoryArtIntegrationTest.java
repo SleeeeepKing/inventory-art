@@ -24,7 +24,10 @@ import com.inventoryart.user.User;
 import com.inventoryart.user.UserRepository;
 import com.inventoryart.user.UserRole;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -438,6 +441,60 @@ class InventoryArtIntegrationTest {
                 Long.class,
                 fixture.tenant().getId()))
         .isZero();
+  }
+
+  @Test
+  void authenticatedUploadFallbackStoresAndBindsAProductImage() throws Exception {
+    Fixture owner = fixture("image-owner");
+    Fixture other = fixture("image-other");
+    Product product = product(owner, "IMAGE", 1);
+    byte[] image = "test-png-image".getBytes(StandardCharsets.UTF_8);
+    String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(image));
+    String presignResponse =
+        mvc.perform(
+                post("/api/v1/files/presign")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "originalFilename",
+                                "art.png",
+                                "contentType",
+                                "image/png",
+                                "size",
+                                image.length,
+                                "checksumSha256",
+                                checksum,
+                                "productId",
+                                product.getId()))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID fileId = UUID.fromString(json.readTree(presignResponse).get("fileId").asText());
+
+    mvc.perform(
+            put("/api/v1/files/{fileId}/content", fileId)
+                .with(userJwt(other))
+                .contentType(MediaType.IMAGE_PNG)
+                .header("X-Content-Sha256", checksum)
+                .content(image))
+        .andExpect(status().isNotFound());
+    mvc.perform(
+            put("/api/v1/files/{fileId}/content", fileId)
+                .with(userJwt(owner))
+                .contentType(MediaType.IMAGE_PNG)
+                .header("X-Content-Sha256", checksum)
+                .content(image))
+        .andExpect(status().isNoContent());
+    mvc.perform(post("/api/v1/files/{fileId}/confirm", fileId).with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CONFIRMED"));
+    mvc.perform(get("/api/v1/products/{id}", product.getId()).with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.imageObjectKey").isNotEmpty())
+        .andExpect(jsonPath("$.imageUrl").isNotEmpty());
   }
 
   @Test
