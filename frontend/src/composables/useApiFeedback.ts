@@ -7,6 +7,7 @@ const errorKeys: Record<string, string> = {
   FORBIDDEN: 'errors.forbidden',
   VALIDATION_ERROR: 'errors.validation',
   DUPLICATE_SKU: 'errors.duplicateSku',
+  DUPLICATE_TENANT_SLUG: 'errors.duplicateTenantSlug',
   INSUFFICIENT_STOCK: 'errors.insufficientStock',
   CURRENCY_MISMATCH: 'errors.currencyMismatch',
   INVALID_LOCALE: 'errors.invalidLocale',

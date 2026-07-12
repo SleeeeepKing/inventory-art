@@ -349,6 +349,7 @@ export const en = {
     editTenant: 'Edit tenant',
     tenantName: 'Tenant name',
     slug: 'Slug',
+    slugHint: 'Use 2–100 lowercase letters, numbers, or hyphens (for example wenlei or wl).',
     currency: 'Currency',
     timezone: 'Timezone',
     businessLocale: 'Business locale',
@@ -413,6 +414,7 @@ export const en = {
     validation: 'Check the highlighted fields.',
     conflict: 'The record changed while you were editing it. Refresh and try again.',
     duplicateSku: 'That SKU is already used in this workspace.',
+    duplicateTenantSlug: 'That slug is already used by another tenant.',
     insufficientStock: 'There is not enough stock to complete this operation.',
     currencyMismatch: 'The product and order currencies must match.',
     invalidLocale: 'Choose English, Simplified Chinese, or French.',
@@ -426,6 +428,7 @@ export const en = {
     passwordLength: 'Use at least 10 characters.',
     fileSize: 'The selected file is too large.',
     fileType: 'Choose a supported file type.',
+    slugFormat: 'Use 2–100 lowercase letters, numbers, or hyphens only.',
   },
 }
 
