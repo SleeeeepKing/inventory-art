@@ -229,7 +229,7 @@ onMounted(load)
           table-layout="auto"
         >
           <ElTableColumn prop="orderNumber" :label="t('orders.orderNumber')" />
-          <ElTableColumn prop="customerName" :label="t('orders.customer')" />
+          <ElTableColumn prop="eventName" :label="t('orders.event')" />
           <ElTableColumn :label="t('common.status')"
             ><template #default="scope"><StatusPill :status="scope.row.status" /></template
           ></ElTableColumn>

@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -64,6 +65,7 @@ class InventoryArtIntegrationTest {
   @Autowired OrderItemRepository orderItems;
   @Autowired AuditLogRepository audits;
   @Autowired PaymentRepository payments;
+  @Autowired JdbcTemplate jdbc;
 
   @Test
   void loginRefreshAndLocalePersistence() throws Exception {
@@ -386,6 +388,113 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
+  void ordersCanBeUpdatedAndDeletedWithAuditLogs() throws Exception {
+    Fixture fixture = fixture("order-crud");
+    Product product = product(fixture, "ORDER-CRUD", 5);
+    String event =
+        mvc.perform(
+                post("/api/v1/sales-events")
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"name\":\"Nearest fair\",\"startDate\":\"2026-07-10\",\"endDate\":\"2026-07-12\"}"))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID eventId = UUID.fromString(json.readTree(event).get("id").asText());
+    String created =
+        mvc.perform(
+                post("/api/v1/orders")
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "items",
+                                List.of(
+                                    Map.of(
+                                        "productId",
+                                        product.getId(),
+                                        "quantity",
+                                        1,
+                                        "unitPrice",
+                                        10)),
+                                "totalAmount",
+                                10,
+                                "salesChannel",
+                                "EXHIBITION",
+                                "eventId",
+                                eventId,
+                                "currency",
+                                "EUR",
+                                "paymentMethod",
+                                "CARD",
+                                "paymentStatus",
+                                "PAID",
+                                "orderDate",
+                                "2026-07-12T10:00:00Z"))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.customerName").doesNotExist())
+            .andExpect(jsonPath("$.customerEmail").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID orderId = UUID.fromString(json.readTree(created).get("id").asText());
+
+    mvc.perform(
+            put("/api/v1/orders/{id}", orderId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "totalAmount",
+                            25,
+                            "salesChannel",
+                            "EXHIBITION",
+                            "eventId",
+                            eventId,
+                            "currency",
+                            "EUR",
+                            "paymentMethod",
+                            "CARD",
+                            "paymentStatus",
+                            "PAID",
+                            "orderDate",
+                            "2026-07-12T11:30:00Z"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalAmount").value(25))
+        .andExpect(jsonPath("$.items.length()").value(1));
+    assertThat(
+            payments
+                .findByTenantIdAndOrderId(fixture.tenant.getId(), orderId)
+                .orElseThrow()
+                .getAmount())
+        .isEqualByComparingTo("25.0000");
+    mvc.perform(post("/api/v1/orders/{id}/cancel", orderId).with(userJwt(fixture)))
+        .andExpect(status().isNotFound());
+    mvc.perform(
+            post("/api/v1/orders/{id}/refunds", orderId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isNotFound());
+
+    mvc.perform(delete("/api/v1/orders/{id}", orderId).with(userJwt(fixture)))
+        .andExpect(status().isNoContent());
+    assertThat(orders.findByIdAndTenantId(orderId, fixture.tenant.getId())).isEmpty();
+    assertThat(
+            orderItems.findAllByTenantIdAndOrderIdOrderByCreatedAt(fixture.tenant.getId(), orderId))
+        .isEmpty();
+    assertThat(payments.findByTenantIdAndOrderId(fixture.tenant.getId(), orderId)).isEmpty();
+    assertThat(audits.findAll())
+        .anyMatch(a -> a.getAction().equals("ORDER_CREATE") && orderId.equals(a.getResourceId()))
+        .anyMatch(a -> a.getAction().equals("ORDER_UPDATE") && orderId.equals(a.getResourceId()))
+        .anyMatch(a -> a.getAction().equals("ORDER_DELETE") && orderId.equals(a.getResourceId()));
+  }
+
+  @Test
   void defaultProductSearchAndDashboardReportUsePostgresTypesSafely() throws Exception {
     Fixture f = fixture("api-defaults");
     product(f, "SEARCH-DEFAULT", 3);
@@ -541,7 +650,7 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
-  void orderLifecycleNeverChangesInventory() {
+  void orderCreationNeverChangesInventory() {
     Fixture f = fixture("orders");
     Product p = product(f, "SKU-ORDER", 10);
     OrderDtos.Request req =
@@ -551,8 +660,6 @@ class InventoryArtIntegrationTest {
             new BigDecimal("30.00"),
             SalesChannel.ONLINE,
             null,
-            null,
-            "Customer",
             null,
             null,
             "EUR",
@@ -565,21 +672,10 @@ class InventoryArtIntegrationTest {
     assertThat(payments.existsByTenantIdAndOrderId(f.tenant.getId(), confirmed.id())).isTrue();
     assertThatThrownBy(() -> orderService.confirm(f.tenant.getId(), f.user.getId(), confirmed.id()))
         .hasMessageContaining("already");
-    var refund =
-        orderService.refund(
-            f.tenant.getId(),
-            f.user.getId(),
-            confirmed.id(),
-            new OrderDtos.RefundRequest(
-                List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(), 1)),
-                null,
-                "Returned"));
-    assertThat(refund.status()).isEqualTo("PARTIALLY_REFUNDED");
-    assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
   }
 
   @Test
-  void amountOnlyOrderCanBeCreatedAndRefunded() {
+  void amountOnlyOrderCanBeCreated() {
     Fixture f = fixture("amount-only");
     OrderDtos.Request request =
         new OrderDtos.Request(
@@ -589,8 +685,6 @@ class InventoryArtIntegrationTest {
             null,
             "Art fair",
             null,
-            null,
-            null,
             "EUR",
             PaymentMethod.OTHER,
             PaymentStatus.PAID,
@@ -599,14 +693,6 @@ class InventoryArtIntegrationTest {
     assertThat(created.status()).isEqualTo("CONFIRMED");
     assertThat(created.totalAmount()).isEqualByComparingTo("42.5000");
     assertThat(created.items()).isEmpty();
-    var refunded =
-        orderService.refund(
-            f.tenant.getId(),
-            f.user.getId(),
-            created.id(),
-            new OrderDtos.RefundRequest(List.of(), new BigDecimal("42.50"), "Customer refund"));
-    assertThat(refunded.status()).isEqualTo("REFUNDED");
-    assertThat(refunded.refundAmount()).isEqualByComparingTo("42.5000");
   }
 
   @Test
@@ -619,8 +705,6 @@ class InventoryArtIntegrationTest {
                 new OrderDtos.ItemRequest(p.getId(), 2, null, BigDecimal.ZERO, BigDecimal.ZERO)),
             new BigDecimal("20.00"),
             SalesChannel.OTHER,
-            null,
-            null,
             null,
             null,
             null,
@@ -646,8 +730,6 @@ class InventoryArtIntegrationTest {
                     secondProduct.getId(), 1, null, BigDecimal.ZERO, BigDecimal.ZERO)),
             new BigDecimal("10.00"),
             SalesChannel.OTHER,
-            null,
-            null,
             null,
             null,
             null,
@@ -680,10 +762,7 @@ class InventoryArtIntegrationTest {
                 .with(userJwt(first))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(cancel))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.succeeded.length()").value(1))
-        .andExpect(jsonPath("$.failed.length()").value(1))
-        .andExpect(jsonPath("$.failed[0].code").value("RESOURCE_NOT_FOUND"));
+        .andExpect(status().isMethodNotAllowed());
     assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock())
         .isEqualTo(10);
     assertThat(products.findById(secondProduct.getId()).orElseThrow().getCurrentStock())
@@ -770,8 +849,6 @@ class InventoryArtIntegrationTest {
             List.of(),
             new BigDecimal("18.00"),
             SalesChannel.ONLINE,
-            null,
-            null,
             null,
             null,
             null,
@@ -903,21 +980,19 @@ class InventoryArtIntegrationTest {
             null,
             "Summer fair",
             null,
-            null,
-            null,
             "EUR",
             PaymentMethod.CARD,
             PaymentStatus.PAID,
             Instant.now());
     var confirmed = orderService.create(f.tenant.getId(), f.user.getId(), request);
-    orderService.refund(
+    jdbc.update(
+        "update order_items set refunded_quantity=1 where tenant_id=? and id=?",
         f.tenant.getId(),
-        f.user.getId(),
-        confirmed.id(),
-        new OrderDtos.RefundRequest(
-            List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(), 1)),
-            null,
-            "Returned"));
+        confirmed.items().getFirst().id());
+    jdbc.update(
+        "update orders set refund_amount=10,status='PARTIALLY_REFUNDED',payment_status='PARTIALLY_REFUNDED' where tenant_id=? and id=?",
+        f.tenant.getId(),
+        confirmed.id());
 
     mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
         .andExpect(status().isOk())
@@ -1003,8 +1078,6 @@ class InventoryArtIntegrationTest {
             OrderStatus.DRAFT,
             AllocationStatus.FULLY_ALLOCATED,
             SalesChannel.OTHER,
-            null,
-            null,
             null,
             null,
             null,

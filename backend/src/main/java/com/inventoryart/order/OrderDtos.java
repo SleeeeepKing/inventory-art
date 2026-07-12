@@ -23,8 +23,6 @@ public final class OrderDtos {
       @NotNull SalesChannel salesChannel,
       UUID eventId,
       @Size(max = 240) String eventName,
-      @Size(max = 240) String customerName,
-      @Email @Size(max = 254) String customerEmail,
       @Size(max = 5000) String customerNote,
       @NotBlank @Pattern(regexp = "[A-Za-z]{3}") String currency,
       @NotNull PaymentMethod paymentMethod,
@@ -53,8 +51,6 @@ public final class OrderDtos {
       String salesChannel,
       UUID eventId,
       String eventName,
-      String customerName,
-      String customerEmail,
       String customerNote,
       String currency,
       BigDecimal subtotal,
@@ -91,6 +87,8 @@ public final class OrderDtos {
       BigDecimal totalAmount,
       List<BatchSuccess> orders) {}
 
+  public record Deleted(UUID id, String orderNumber, String source) {}
+
   public record BatchRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> orderIds) {}
 
   public record BatchSuccess(UUID id, String orderNumber, String status) {}
@@ -98,11 +96,4 @@ public final class OrderDtos {
   public record BatchFailure(UUID id, String orderNumber, String code, String message) {}
 
   public record BatchResponse(List<BatchSuccess> succeeded, List<BatchFailure> failed) {}
-
-  public record RefundRequest(
-      @Size(max = 500) List<@Valid RefundLine> items,
-      @DecimalMin(value = "0.0", inclusive = false) BigDecimal amount,
-      @Size(max = 2000) String reason) {}
-
-  public record RefundLine(@NotNull UUID orderItemId, @Min(1) int quantity) {}
 }

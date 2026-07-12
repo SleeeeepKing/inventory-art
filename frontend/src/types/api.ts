@@ -122,8 +122,6 @@ export interface Order {
   salesChannel?: string
   eventId?: string
   eventName?: string
-  customerName?: string
-  customerEmail?: string
   currency: string
   subtotal: number
   taxAmount?: number
@@ -134,6 +132,8 @@ export interface Order {
   items: OrderItem[]
   orderedAt?: string
   orderDate: string
+  paymentMethod?: string
+  paymentStatus?: string
   createdBy?: string
   createdAt?: string
 }

@@ -14,11 +14,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -67,6 +70,23 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AccessDeniedException.class)
   ResponseEntity<ApiError> denied(AccessDeniedException ex, HttpServletRequest request) {
     return response(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access denied", request, null);
+  }
+
+  @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+  ResponseEntity<ApiError> notFound(Exception ex, HttpServletRequest request) {
+    return response(
+        HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", request, null);
+  }
+
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  ResponseEntity<ApiError> methodNotAllowed(
+      HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+    return response(
+        HttpStatus.METHOD_NOT_ALLOWED,
+        "METHOD_NOT_ALLOWED",
+        "Request method is not supported",
+        request,
+        null);
   }
 
   @ExceptionHandler(MaxUploadSizeExceededException.class)

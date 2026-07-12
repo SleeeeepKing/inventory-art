@@ -200,8 +200,6 @@ public class DataInitializer implements ApplicationRunner {
               SalesChannel.EXHIBITION,
               eventId,
               "Demo Expo",
-              "Demo Customer",
-              null,
               null,
               "EUR",
               PaymentMethod.CARD,

@@ -115,4 +115,13 @@ public class Payment {
   public Instant getCreatedAt() {
     return createdAt;
   }
+
+  public void updateDetails(
+      BigDecimal amount, PaymentMethod paymentMethod, PaymentStatus status, Instant paidAt) {
+    this.amount = amount;
+    this.paymentMethod = paymentMethod;
+    this.status = status;
+    this.paidAt = paidAt;
+    this.updatedAt = Instant.now();
+  }
 }

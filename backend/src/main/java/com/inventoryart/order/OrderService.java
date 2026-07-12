@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,8 +24,6 @@ public class OrderService {
   private final OrderRepository orders;
   private final OrderItemRepository items;
   private final ProductRepository products;
-  private final OrderRefundRepository refunds;
-  private final OrderRefundItemRepository refundItems;
   private final PaymentRepository payments;
   private final SalesEventService events;
 
@@ -34,15 +31,11 @@ public class OrderService {
       OrderRepository orders,
       OrderItemRepository items,
       ProductRepository products,
-      OrderRefundRepository refunds,
-      OrderRefundItemRepository refundItems,
       PaymentRepository payments,
       SalesEventService events) {
     this.orders = orders;
     this.items = items;
     this.products = products;
-    this.refunds = refunds;
-    this.refundItems = refundItems;
     this.payments = payments;
     this.events = events;
   }
@@ -62,8 +55,6 @@ public class OrderService {
                 event.channel(),
                 event.id(),
                 event.name(),
-                request.customerName(),
-                request.customerEmail(),
                 request.customerNote(),
                 request.currency().toUpperCase(),
                 request.paymentMethod(),
@@ -101,8 +92,6 @@ public class OrderService {
                   event.getId(),
                   event.getName(),
                   null,
-                  null,
-                  null,
                   request.currency().toUpperCase(Locale.ROOT),
                   request.paymentMethod(),
                   request.paymentStatus(),
@@ -134,24 +123,30 @@ public class OrderService {
     if (!order.getCurrency().equalsIgnoreCase(request.currency()))
       throw new BusinessException("CURRENCY_MISMATCH", "Order currency cannot be changed");
     List<OrderItem> old = items.findAllByTenantIdAndOrderIdOrderByCreatedAt(tenant, id);
-    List<OrderItem> replacement = buildItems(tenant, id, request);
-    if (old.stream().anyMatch(i -> i.getRefundedQuantity() > 0))
-      throw new BusinessException("ORDER_NOT_EDITABLE", "Refunded order items cannot be replaced");
-    EventSelection event = event(tenant, request);
-    items.deleteAllByTenantIdAndOrderId(tenant, id);
-    items.flush();
-    if (!replacement.isEmpty()) items.saveAll(replacement);
+    List<OrderItem> replacement = old;
+    if (request.items() != null) {
+      if (old.stream().anyMatch(i -> i.getRefundedQuantity() > 0))
+        throw new BusinessException(
+            "ORDER_NOT_EDITABLE", "Refunded order items cannot be replaced");
+      replacement = buildItems(tenant, id, request);
+      items.deleteAllByTenantIdAndOrderId(tenant, id);
+      items.flush();
+      if (!replacement.isEmpty()) items.saveAll(replacement);
+    }
+    EventSelection event =
+        Objects.equals(request.eventId(), order.getEventId())
+            ? new EventSelection(order.getSalesChannel(), order.getEventId(), order.getEventName())
+            : event(tenant, request);
     order.updateDetails(
         event.channel(),
         event.id(),
         event.name(),
-        request.customerName(),
-        request.customerEmail(),
-        request.customerNote(),
+        request.customerNote() == null ? order.getCustomerNote() : request.customerNote(),
         request.paymentMethod(),
         request.paymentStatus(),
         request.orderDate());
     setRecordedTotal(order, request.totalAmount());
+    syncPayment(order);
     return response(order, replacement);
   }
 
@@ -179,8 +174,6 @@ public class OrderService {
         event.channel(),
         event.id(),
         event.name(),
-        request.customerName(),
-        request.customerEmail(),
         request.customerNote(),
         request.paymentMethod(),
         request.paymentStatus(),
@@ -203,101 +196,22 @@ public class OrderService {
     return response(order, lines);
   }
 
-  @Transactional
-  public OrderDtos.Response cancel(UUID tenant, UUID user, UUID id) {
-    SalesOrder order =
-        orders.findLocked(id, tenant).orElseThrow(() -> new NotFoundException("Order"));
-    if (order.getStatus() == OrderStatus.CANCELLED)
-      throw new BusinessException("ORDER_ALREADY_CANCELLED", "Order has already been cancelled");
-    if (order.getStatus() == OrderStatus.PARTIALLY_REFUNDED
-        || order.getStatus() == OrderStatus.REFUNDED)
-      throw new BusinessException(
-          "ORDER_CANNOT_BE_CANCELLED", "Refunded order cannot be cancelled");
-    List<OrderItem> lines = items.findAllByTenantIdAndOrderIdOrderByCreatedAt(tenant, id);
-    order.cancelled();
-    return response(order, lines);
-  }
-
-  @Transactional
-  public OrderDtos.Response refund(
-      UUID tenant, UUID user, UUID id, OrderDtos.RefundRequest request) {
-    SalesOrder order =
-        orders.findLocked(id, tenant).orElseThrow(() -> new NotFoundException("Order"));
-    if (order.getStatus() == OrderStatus.CANCELLED
-        || order.getStatus() == OrderStatus.DRAFT
-        || order.getStatus() == OrderStatus.REFUNDED)
-      throw new BusinessException("ORDER_CANNOT_BE_REFUNDED", "Order cannot be refunded");
-    List<OrderItem> all = items.findAllByTenantIdAndOrderIdOrderByCreatedAt(tenant, id);
-    Map<UUID, OrderItem> byId = all.stream().collect(Collectors.toMap(OrderItem::getId, i -> i));
-    List<OrderDtos.RefundLine> requested = request.items() == null ? List.of() : request.items();
-    BigDecimal amount = BigDecimal.ZERO;
-    Map<UUID, BigDecimal> amounts = new HashMap<>();
-    Set<UUID> seen = new HashSet<>();
-    for (OrderDtos.RefundLine line : requested) {
-      if (!seen.add(line.orderItemId()))
-        throw new BusinessException("INVALID_REFUND", "Duplicate refund line");
-      OrderItem item = byId.get(line.orderItemId());
-      if (item == null) throw new NotFoundException("Order item");
-      if (line.quantity() > item.refundableQuantity())
-        throw new BusinessException(
-            "INVALID_REFUND_QUANTITY", "Refund quantity exceeds remaining quantity");
-      BigDecimal lineAmount = refundAmount(item, line.quantity());
-      amounts.put(item.getId(), lineAmount);
-      amount = amount.add(lineAmount);
-    }
-    if (requested.isEmpty()) {
-      if (request.amount() == null)
-        throw new BusinessException(
-            "REFUND_AMOUNT_REQUIRED", "Refund amount is required when no order items are selected");
-      amount = money(request.amount());
-    } else {
-      amount = money(amount);
-      if (request.amount() != null) {
-        BigDecimal explicit = money(request.amount()),
-            rawTotal = amount,
-            allocated = BigDecimal.ZERO;
-        for (int index = 0; index < requested.size(); index++) {
-          UUID itemId = requested.get(index).orderItemId();
-          BigDecimal share =
-              index == requested.size() - 1
-                  ? explicit.subtract(allocated)
-                  : rawTotal.signum() > 0
-                      ? money(
-                          amounts
-                              .get(itemId)
-                              .multiply(explicit)
-                              .divide(rawTotal, 8, RoundingMode.HALF_UP))
-                      : money(
-                          explicit.divide(
-                              BigDecimal.valueOf(requested.size()), 8, RoundingMode.HALF_UP));
-          amounts.put(itemId, share);
-          allocated = allocated.add(share);
-        }
-        amount = explicit;
-      }
-    }
-    BigDecimal remaining = money(order.getTotalAmount().subtract(order.getRefundAmount()));
-    if (amount.signum() <= 0 || amount.compareTo(remaining) > 0)
-      throw new BusinessException(
-          "INVALID_REFUND_AMOUNT", "Refund amount exceeds the remaining order amount");
-    OrderRefund refund = refunds.save(new OrderRefund(tenant, id, amount, request.reason(), user));
-    for (OrderDtos.RefundLine line : requested) {
-      OrderItem item = byId.get(line.orderItemId());
-      item.addRefunded(line.quantity());
-      refundItems.save(
-          new OrderRefundItem(
-              tenant, refund.getId(), item.getId(), line.quantity(), amounts.get(item.getId())));
-    }
-    boolean full = order.getRefundAmount().add(amount).compareTo(order.getTotalAmount()) >= 0;
-    order.refunded(amount, full);
-    return response(order, all);
-  }
-
   @Transactional(readOnly = true)
   public OrderDtos.Response get(UUID tenant, UUID id) {
     SalesOrder o =
         orders.findByIdAndTenantId(id, tenant).orElseThrow(() -> new NotFoundException("Order"));
     return response(o, items.findAllByTenantIdAndOrderIdOrderByCreatedAt(tenant, id));
+  }
+
+  @Transactional
+  public OrderDtos.Deleted delete(UUID tenant, UUID id) {
+    SalesOrder order =
+        orders.findLocked(id, tenant).orElseThrow(() -> new NotFoundException("Order"));
+    OrderDtos.Deleted deleted =
+        new OrderDtos.Deleted(order.getId(), order.getOrderNumber(), order.getSource().name());
+    orders.delete(order);
+    orders.flush();
+    return deleted;
   }
 
   public OrderDtos.Response response(SalesOrder o, List<OrderItem> lines) {
@@ -310,8 +224,6 @@ public class OrderService {
         o.getSalesChannel().name(),
         o.getEventId(),
         o.getEventName(),
-        o.getCustomerName(),
-        o.getCustomerEmail(),
         o.getCustomerNote(),
         o.getCurrency(),
         o.getSubtotal(),
@@ -406,24 +318,8 @@ public class OrderService {
         money(subtotal), money(discount), money(tax), money(subtotal.subtract(discount).add(tax)));
   }
 
-  private BigDecimal refundAmount(OrderItem item, int quantity) {
-    int before = item.getRefundedQuantity();
-    BigDecimal total = item.getLineTotal();
-    BigDecimal previous =
-        total
-            .multiply(BigDecimal.valueOf(before))
-            .divide(BigDecimal.valueOf(item.getQuantity()), 4, RoundingMode.HALF_UP);
-    BigDecimal after =
-        total
-            .multiply(BigDecimal.valueOf(before + quantity))
-            .divide(BigDecimal.valueOf(item.getQuantity()), 4, RoundingMode.HALF_UP);
-    return after.subtract(previous).setScale(4, RoundingMode.HALF_UP);
-  }
-
   private void recordManualPaymentIfPaid(SalesOrder order) {
-    if (order.getSource() == OrderSource.MANUAL
-        && order.getPaymentStatus() == PaymentStatus.PAID
-        && !payments.existsByTenantIdAndOrderId(order.getTenantId(), order.getId()))
+    if (order.getSource() == OrderSource.MANUAL && order.getPaymentStatus() == PaymentStatus.PAID)
       payments.save(
           new Payment(
               order.getTenantId(),
@@ -435,6 +331,19 @@ public class OrderService {
               order.getPaymentMethod(),
               PaymentStatus.PAID,
               order.getOrderDate()));
+  }
+
+  private void syncPayment(SalesOrder order) {
+    payments
+        .findByTenantIdAndOrderId(order.getTenantId(), order.getId())
+        .ifPresentOrElse(
+            payment ->
+                payment.updateDetails(
+                    order.getTotalAmount(),
+                    order.getPaymentMethod(),
+                    order.getPaymentStatus(),
+                    order.getOrderDate()),
+            () -> recordManualPaymentIfPaid(order));
   }
 
   private EventSelection event(UUID tenant, OrderDtos.Request request) {

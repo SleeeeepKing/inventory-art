@@ -44,12 +44,6 @@ public class SalesOrder {
   @Column(name = "event_name")
   private String eventName;
 
-  @Column(name = "customer_name")
-  private String customerName;
-
-  @Column(name = "customer_email")
-  private String customerEmail;
-
   @Column(name = "customer_note")
   private String customerNote;
 
@@ -117,8 +111,6 @@ public class SalesOrder {
       SalesChannel channel,
       UUID eventId,
       String event,
-      String customerName,
-      String customerEmail,
       String note,
       String currency,
       PaymentMethod method,
@@ -134,8 +126,6 @@ public class SalesOrder {
     this.salesChannel = channel;
     this.eventId = eventId;
     this.eventName = event;
-    this.customerName = customerName;
-    this.customerEmail = customerEmail;
     this.customerNote = note;
     this.currency = currency;
     this.subtotal = BigDecimal.ZERO;
@@ -194,14 +184,6 @@ public class SalesOrder {
 
   public String getEventName() {
     return eventName;
-  }
-
-  public String getCustomerName() {
-    return customerName;
-  }
-
-  public String getCustomerEmail() {
-    return customerEmail;
   }
 
   public String getCustomerNote() {
@@ -294,8 +276,6 @@ public class SalesOrder {
       SalesChannel channel,
       UUID eventId,
       String event,
-      String name,
-      String email,
       String note,
       PaymentMethod method,
       PaymentStatus paymentStatus,
@@ -303,8 +283,6 @@ public class SalesOrder {
     this.salesChannel = channel;
     this.eventId = eventId;
     this.eventName = event;
-    this.customerName = name;
-    this.customerEmail = email;
     this.customerNote = note;
     this.paymentMethod = method;
     this.paymentStatus = paymentStatus;
@@ -315,19 +293,6 @@ public class SalesOrder {
 
   public void confirmed() {
     this.status = OrderStatus.CONFIRMED;
-    this.updatedAt = Instant.now();
-  }
-
-  public void cancelled() {
-    this.status = OrderStatus.CANCELLED;
-    this.inventoryApplied = false;
-    this.updatedAt = Instant.now();
-  }
-
-  public void refunded(BigDecimal amount, boolean full) {
-    this.refundAmount = this.refundAmount.add(amount);
-    this.status = full ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED;
-    this.paymentStatus = full ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED;
     this.updatedAt = Instant.now();
   }
 

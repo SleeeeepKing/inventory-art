@@ -55,14 +55,13 @@ public class AdminDataQueryService {
               and (:status is null or o.status=:status)
               and o.order_date>=:from and o.order_date<:to
               and (:q='' or lower(o.order_number) like lower(concat('%',:q,'%'))
-                   or lower(coalesce(o.customer_name,'')) like lower(concat('%',:q,'%'))
                    or lower(coalesce(o.event_name,'')) like lower(concat('%',:q,'%')))
             """;
     List<AdminOrderRow> rows =
         jdbc.query(
             """
             select o.id,o.tenant_id,t.name tenant_name,o.order_number,o.status,o.sales_channel,
-                   o.event_id,o.event_name,o.customer_name,o.currency,o.total_amount,o.order_date,
+                   o.event_id,o.event_name,o.currency,o.total_amount,o.order_date,
                    o.created_by,u.display_name created_by_name
               from orders o
               join tenants t on t.id=o.tenant_id
@@ -81,7 +80,6 @@ public class AdminDataQueryService {
                     rs.getString("sales_channel"),
                     rs.getObject("event_id", UUID.class),
                     rs.getString("event_name"),
-                    rs.getString("customer_name"),
                     rs.getString("currency"),
                     rs.getBigDecimal("total_amount"),
                     rs.getTimestamp("order_date").toInstant(),
@@ -218,7 +216,6 @@ public class AdminDataQueryService {
       String salesChannel,
       UUID eventId,
       String eventName,
-      String customerName,
       String currency,
       BigDecimal totalAmount,
       Instant orderDate,
