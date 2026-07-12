@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
@@ -34,6 +36,7 @@ public class StorageConfiguration {
             .credentialsProvider(credentials)
             .region(Region.of(storage.getRegion()))
             .serviceConfiguration(s3Configuration);
+    configureClientCompatibility(clientBuilder, provider);
     S3Presigner.Builder presignerBuilder =
         S3Presigner.builder()
             .credentialsProvider(credentials)
@@ -58,5 +61,11 @@ public class StorageConfiguration {
         .pathStyleAccessEnabled(provider.equals("minio") || cloudflareR2)
         .chunkedEncodingEnabled(!cloudflareR2)
         .build();
+  }
+
+  static void configureClientCompatibility(S3ClientBuilder builder, String provider) {
+    if (!provider.equals("r2")) return;
+    builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED);
+    builder.responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
   }
 }

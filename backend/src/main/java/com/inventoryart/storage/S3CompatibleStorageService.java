@@ -7,7 +7,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -26,6 +29,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 /** Used for both local MinIO and Cloudflare R2. */
 public final class S3CompatibleStorageService implements StorageService, AutoCloseable {
+  private static final Logger log = LoggerFactory.getLogger(S3CompatibleStorageService.class);
+
   private final S3Client client;
   private final S3Presigner presigner;
   private final String bucket;
@@ -144,6 +149,24 @@ public final class S3CompatibleStorageService implements StorageService, AutoClo
   }
 
   private BusinessException storageFailure(String operation, RuntimeException cause) {
+    if (cause instanceof AwsServiceException serviceException) {
+      String errorCode =
+          serviceException.awsErrorDetails() == null
+              ? null
+              : serviceException.awsErrorDetails().errorCode();
+      log.error(
+          "S3-compatible storage failure: operation={}, status={}, errorCode={}, requestId={}",
+          operation,
+          serviceException.statusCode(),
+          errorCode,
+          serviceException.requestId());
+    } else {
+      log.error(
+          "S3-compatible storage failure: operation={}, type={}, message={}",
+          operation,
+          cause.getClass().getSimpleName(),
+          cause.getMessage());
+    }
     return new BusinessException(
         "STORAGE_PROVIDER_ERROR",
         "Unable to " + operation + " private object",
