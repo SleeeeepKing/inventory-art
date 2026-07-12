@@ -12,12 +12,6 @@ import java.util.UUID;
 @Entity
 @Table(name = "stored_files")
 public class StoredFile {
-  public enum Purpose {
-    PRODUCT_IMAGE,
-    IMPORT_SOURCE,
-    ERROR_EXPORT
-  }
-
   public enum Status {
     PENDING,
     CONFIRMED,
@@ -45,17 +39,10 @@ public class StoredFile {
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
-  private Purpose purpose;
-
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false)
   private Status status;
 
-  @Column(name = "resource_type")
-  private String resourceType;
-
-  @Column(name = "resource_id")
-  private UUID resourceId;
+  @Column(name = "product_id", nullable = false)
+  private UUID productId;
 
   @Column(name = "created_by", nullable = false)
   private UUID createdBy;
@@ -78,9 +65,7 @@ public class StoredFile {
       String contentType,
       long size,
       String checksum,
-      Purpose purpose,
-      String resourceType,
-      UUID resourceId,
+      UUID productId,
       UUID createdBy) {
     StoredFile file = new StoredFile();
     file.id = UUID.randomUUID();
@@ -90,10 +75,8 @@ public class StoredFile {
     file.contentType = contentType;
     file.size = size;
     file.checksum = checksum;
-    file.purpose = purpose;
     file.status = Status.PENDING;
-    file.resourceType = resourceType;
-    file.resourceId = resourceId;
+    file.productId = productId;
     file.createdBy = createdBy;
     file.createdAt = Instant.now();
     return file;
@@ -137,20 +120,12 @@ public class StoredFile {
     return checksum;
   }
 
-  public Purpose getPurpose() {
-    return purpose;
-  }
-
   public Status getStatus() {
     return status;
   }
 
-  public String getResourceType() {
-    return resourceType;
-  }
-
-  public UUID getResourceId() {
-    return resourceId;
+  public UUID getProductId() {
+    return productId;
   }
 
   public UUID getCreatedBy() {

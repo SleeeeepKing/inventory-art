@@ -128,7 +128,7 @@ public class SalesEventController {
     if (events.isReferenced(tenantId, id)) {
       throw new BusinessException(
           "SALES_EVENT_IN_USE",
-          "This sales event has linked orders, imports, or inventory sales and cannot be deleted; disable it instead",
+          "This sales event has linked transactions or inventory sales and cannot be deleted; disable it instead",
           HttpStatus.CONFLICT);
     }
     events.delete(event);

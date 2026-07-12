@@ -219,12 +219,9 @@ onMounted(load)
               <strong>{{
                 t('products.unitsSoldValue', { count: number(scope.row.totalUnitsSold || 0) })
               }}</strong
-              ><small
-                >{{ money(scope.row.totalSalesRevenue || 0, scope.row.currency) }} ·
-                {{
-                  scope.row.lastSaleAt ? date(scope.row.lastSaleAt) : t('products.neverSold')
-                }}</small
-              >
+              ><small>{{
+                scope.row.lastSaleDate ? date(scope.row.lastSaleDate) : t('products.neverSold')
+              }}</small>
             </div></template
           ></ElTableColumn
         >

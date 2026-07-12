@@ -5,7 +5,9 @@ import static com.inventoryart.common.QueryTimeBounds.to;
 
 import com.inventoryart.audit.AuditService;
 import com.inventoryart.common.PageResponse;
-import com.inventoryart.order.SalesChannel;
+import com.inventoryart.event.SalesEvent;
+import com.inventoryart.event.SalesEventRepository;
+import com.inventoryart.exception.BusinessException;
 import com.inventoryart.security.CurrentUserService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -15,7 +17,6 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -23,11 +24,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -37,6 +49,7 @@ public class InventoryController {
   private final InventorySaleService sales;
   private final InventoryMovementRepository movements;
   private final InventorySaleBatchRepository saleBatches;
+  private final SalesEventRepository events;
   private final CurrentUserService current;
   private final AuditService audit;
 
@@ -45,58 +58,61 @@ public class InventoryController {
       InventorySaleService sales,
       InventoryMovementRepository movements,
       InventorySaleBatchRepository saleBatches,
+      SalesEventRepository events,
       CurrentUserService current,
       AuditService audit) {
     this.service = service;
     this.sales = sales;
     this.movements = movements;
     this.saleBatches = saleBatches;
+    this.events = events;
     this.current = current;
     this.audit = audit;
   }
 
   @PostMapping("/adjustments")
-  @org.springframework.transaction.annotation.Transactional
+  @Transactional
   public List<MovementResponse> adjust(@Valid @RequestBody AdjustmentBatch request) {
-    UUID tenant = current.tenantId();
+    UUID tenantId = current.tenantId();
     List<MovementResponse> result =
         request.items().stream()
             .map(
-                i -> {
-                  int delta = signed(i.type(), i.quantity());
-                  return MovementResponse.from(
-                      service.apply(
-                          tenant,
-                          i.productId(),
-                          delta,
-                          i.type(),
-                          null,
-                          null,
-                          i.reference(),
-                          blankToNull(i.remark()),
-                          current.userId()),
-                      null);
-                })
+                item ->
+                    MovementResponse.from(
+                        service.apply(
+                            tenantId,
+                            item.productId(),
+                            signed(item.type(), item.quantity()),
+                            item.type(),
+                            item.reference(),
+                            blankToNull(item.remark()),
+                            current.userId()),
+                        null,
+                        null))
             .toList();
     audit.record(
-        tenant,
+        tenantId,
         "INVENTORY_ADJUST",
         "INVENTORY_MOVEMENT",
         null,
         "SUCCESS",
-        java.util.Map.of("count", result.size()));
+        Map.of("count", result.size()));
     return result;
   }
 
   @PutMapping("/stock/{productId}")
   public MovementResponse setStock(
       @PathVariable UUID productId, @Valid @RequestBody StockRequest request) {
-    UUID tenant = current.tenantId();
+    UUID tenantId = current.tenantId();
     InventoryMovement movement =
         service.setStock(
-            tenant, productId, request.quantity(), blankToNull(request.remark()), current.userId());
+            tenantId,
+            productId,
+            request.quantity(),
+            blankToNull(request.remark()),
+            current.userId());
     audit.record(
-        tenant,
+        tenantId,
         "INVENTORY_STOCK_CORRECT",
         "INVENTORY_MOVEMENT",
         movement.getId(),
@@ -108,33 +124,32 @@ public class InventoryController {
             movement.getStockBefore(),
             "stockAfter",
             movement.getStockAfter()));
-    return MovementResponse.from(movement, null);
+    return MovementResponse.from(movement, null, null);
   }
 
   @PostMapping("/sales")
-  @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+  @ResponseStatus(HttpStatus.CREATED)
   public InventorySaleDtos.SaleResponse sale(
       @Valid @RequestBody InventorySaleDtos.SaleRequest request) {
-    UUID tenant = current.tenantId();
-    InventorySaleService.Result result = sales.record(tenant, current.userId(), request);
+    UUID tenantId = current.tenantId();
+    InventorySaleService.Result result = sales.record(tenantId, current.userId(), request);
     InventorySaleBatch batch = result.batch();
     List<MovementResponse> response =
-        result.movements().stream().map(m -> MovementResponse.from(m, batch)).toList();
+        result.movements().stream()
+            .map(movement -> MovementResponse.from(movement, batch, result.eventName()))
+            .toList();
     audit.record(
-        tenant,
+        tenantId,
         "INVENTORY_SALE_BATCH",
         "INVENTORY_SALE_BATCH",
         batch.getId(),
         "SUCCESS",
-        Map.of("items", response.size(), "channel", batch.getSalesChannel().name()));
+        Map.of("items", response.size(), "eventId", batch.getEventId()));
     return new InventorySaleDtos.SaleResponse(
         batch.getId(),
-        batch.getSalesChannel().name(),
         batch.getEventId(),
-        batch.getEventName(),
-        batch.getCurrency(),
+        result.eventName(),
         batch.getAttributedDate(),
-        batch.getRemark(),
         batch.getOperatorId(),
         batch.getCreatedAt(),
         response);
@@ -144,7 +159,6 @@ public class InventoryController {
   public PageResponse<MovementResponse> list(
       @RequestParam(required = false) UUID productId,
       @RequestParam(required = false) MovementType type,
-      @RequestParam(required = false) SalesChannel channel,
       @RequestParam(required = false) UUID eventId,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant from,
@@ -152,106 +166,104 @@ public class InventoryController {
           Instant to,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "50") @Min(1) @Max(200) int size) {
-    UUID tenant = current.tenantId();
+    UUID tenantId = current.tenantId();
     var result =
         movements.search(
-            tenant,
+            tenantId,
             productId,
             type,
-            channel,
             eventId,
             from(from),
             to(to),
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-    Map<UUID, InventorySaleBatch> batches = batches(tenant, result.getContent());
+    Map<UUID, InventorySaleBatch> batches = batches(tenantId, result.getContent());
+    Map<UUID, String> eventNames = eventNames(tenantId, batches.values().stream().toList());
     return PageResponse.of(
         result.map(
-            m ->
-                MovementResponse.from(
-                    m, m.getSaleBatchId() == null ? null : batches.get(m.getSaleBatchId()))));
+            movement -> {
+              InventorySaleBatch batch = batches.get(movement.getSaleBatchId());
+              return MovementResponse.from(
+                  movement, batch, batch == null ? null : eventNames.get(batch.getEventId()));
+            }));
   }
 
   @GetMapping(value = "/export", produces = "text/csv")
   public void export(HttpServletResponse response) throws IOException {
     response.setContentType("text/csv");
     response.setHeader("Content-Disposition", "attachment; filename=inventory-movements.csv");
-    PrintWriter w = response.getWriter();
-    w.println(
-        "createdAt,productId,type,quantity,stockBefore,stockAfter,channel,event,attributedDate,unitPrice,currency,attributedAmount,reference,remark");
+    PrintWriter writer = response.getWriter();
+    writer.println(
+        "createdAt,productId,type,quantity,stockBefore,stockAfter,event,attributedDate,reference,remark");
     int page = 0;
     org.springframework.data.domain.Page<InventoryMovement> result;
-    UUID tenant = current.tenantId();
+    UUID tenantId = current.tenantId();
     do {
       result =
           movements.search(
-              tenant,
-              null,
+              tenantId,
               null,
               null,
               null,
               from(null),
               to(null),
               PageRequest.of(page++, 1000, Sort.by(Sort.Direction.DESC, "createdAt")));
-      Map<UUID, InventorySaleBatch> batches = batches(tenant, result.getContent());
+      Map<UUID, InventorySaleBatch> batches = batches(tenantId, result.getContent());
+      Map<UUID, String> eventNames = eventNames(tenantId, batches.values().stream().toList());
       result.forEach(
-          m -> {
-            InventorySaleBatch b =
-                m.getSaleBatchId() == null ? null : batches.get(m.getSaleBatchId());
-            BigDecimal amount = attributedAmount(m);
-            w.printf(
-                "%s,%s,%s,%d,%d,%d,%s,\"%s\",%s,%s,%s,%s,\"%s\",\"%s\"%n",
-                m.getCreatedAt(),
-                m.getProductId(),
-                m.getMovementType(),
-                m.getQuantity(),
-                m.getStockBefore(),
-                m.getStockAfter(),
-                b == null ? "" : b.getSalesChannel().name(),
-                csv(b == null ? null : b.getEventName()),
-                b == null ? "" : b.getAttributedDate(),
-                m.getUnitPrice() == null ? "" : m.getUnitPrice(),
-                b == null ? "" : b.getCurrency(),
-                amount == null ? "" : amount,
-                csv(m.getReference()),
-                csv(m.getRemark()));
+          movement -> {
+            InventorySaleBatch batch = batches.get(movement.getSaleBatchId());
+            writer.printf(
+                "%s,%s,%s,%d,%d,%d,\"%s\",%s,\"%s\",\"%s\"%n",
+                movement.getCreatedAt(),
+                movement.getProductId(),
+                movement.getMovementType(),
+                movement.getQuantity(),
+                movement.getStockBefore(),
+                movement.getStockAfter(),
+                csv(batch == null ? null : eventNames.get(batch.getEventId())),
+                batch == null ? "" : batch.getAttributedDate(),
+                csv(movement.getReference()),
+                csv(movement.getRemark()));
           });
     } while (result.hasNext());
   }
 
   private int signed(MovementType type, int quantity) {
-    if (quantity <= 0)
-      throw new com.inventoryart.exception.BusinessException(
-          "INVALID_QUANTITY", "Quantity must be positive");
+    if (quantity <= 0) {
+      throw new BusinessException("INVALID_QUANTITY", "Quantity must be positive");
+    }
     return switch (type) {
       case PURCHASE, ADJUSTMENT_IN, RETURN, INITIAL -> quantity;
       case ADJUSTMENT_OUT -> -quantity;
       default ->
-          throw new com.inventoryart.exception.BusinessException(
-              "INVALID_MOVEMENT_TYPE", "Unsupported manual movement type");
+          throw new BusinessException("INVALID_MOVEMENT_TYPE", "Unsupported manual movement type");
     };
   }
 
-  private Map<UUID, InventorySaleBatch> batches(UUID tenant, List<InventoryMovement> rows) {
+  private Map<UUID, InventorySaleBatch> batches(UUID tenantId, List<InventoryMovement> movements) {
     List<UUID> ids =
-        rows.stream()
+        movements.stream()
             .map(InventoryMovement::getSaleBatchId)
             .filter(Objects::nonNull)
             .distinct()
             .toList();
-    if (ids.isEmpty()) return Map.of();
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
     Map<UUID, InventorySaleBatch> result = new HashMap<>();
     saleBatches
-        .findAllByTenantIdAndIdIn(tenant, ids)
+        .findAllByTenantIdAndIdIn(tenantId, ids)
         .forEach(batch -> result.put(batch.getId(), batch));
     return result;
   }
 
-  private static BigDecimal attributedAmount(InventoryMovement movement) {
-    return movement.getUnitPrice() == null
-        ? null
-        : movement
-            .getUnitPrice()
-            .multiply(BigDecimal.valueOf(Math.abs((long) movement.getQuantity())));
+  private Map<UUID, String> eventNames(UUID tenantId, List<InventorySaleBatch> batches) {
+    List<UUID> ids = batches.stream().map(InventorySaleBatch::getEventId).distinct().toList();
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    return events.findAllByTenantIdAndIdIn(tenantId, ids).stream()
+        .collect(Collectors.toMap(SalesEvent::getId, SalesEvent::getName));
   }
 
   private static String blankToNull(String value) {
@@ -259,9 +271,13 @@ public class InventoryController {
   }
 
   private String csv(String value) {
-    if (value == null) return "";
+    if (value == null) {
+      return "";
+    }
     String safe = value;
-    if (!safe.isEmpty() && "=+-@".indexOf(safe.charAt(0)) >= 0) safe = "'" + safe;
+    if (!safe.isEmpty() && "=+-@".indexOf(safe.charAt(0)) >= 0) {
+      safe = "'" + safe;
+    }
     return safe.replace("\"", "\"\"");
   }
 
@@ -283,40 +299,31 @@ public class InventoryController {
       int quantity,
       int stockBefore,
       int stockAfter,
-      UUID relatedOrderId,
       UUID saleBatchId,
-      String salesChannel,
       UUID eventId,
       String eventName,
       LocalDate attributedDate,
-      BigDecimal unitPrice,
-      String currency,
-      BigDecimal attributedAmount,
       String reference,
       String remark,
       UUID operatorId,
       Instant createdAt) {
-    static MovementResponse from(InventoryMovement m, InventorySaleBatch batch) {
+    static MovementResponse from(
+        InventoryMovement movement, InventorySaleBatch batch, String eventName) {
       return new MovementResponse(
-          m.getId(),
-          m.getProductId(),
-          m.getMovementType().name(),
-          m.getQuantity(),
-          m.getStockBefore(),
-          m.getStockAfter(),
-          m.getRelatedOrderId(),
-          m.getSaleBatchId(),
-          batch == null ? null : batch.getSalesChannel().name(),
+          movement.getId(),
+          movement.getProductId(),
+          movement.getMovementType().name(),
+          movement.getQuantity(),
+          movement.getStockBefore(),
+          movement.getStockAfter(),
+          movement.getSaleBatchId(),
           batch == null ? null : batch.getEventId(),
-          batch == null ? null : batch.getEventName(),
+          eventName,
           batch == null ? null : batch.getAttributedDate(),
-          m.getUnitPrice(),
-          batch == null ? null : batch.getCurrency(),
-          InventoryController.attributedAmount(m),
-          m.getReference(),
-          m.getRemark(),
-          m.getOperatorId(),
-          m.getCreatedAt());
+          movement.getReference(),
+          movement.getRemark(),
+          movement.getOperatorId(),
+          movement.getCreatedAt());
     }
   }
 }

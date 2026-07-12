@@ -82,8 +82,6 @@ public class FileService {
                 request.contentType(),
                 request.size(),
                 checksum,
-                StoredFile.Purpose.PRODUCT_IMAGE,
-                "PRODUCT",
                 request.productId(),
                 currentUser.userId()));
     StorageService.PresignedRequest signed =
@@ -118,13 +116,13 @@ public class FileService {
     }
     Instant now = Instant.now();
     file.confirm(now);
-    if (file.getPurpose() == StoredFile.Purpose.PRODUCT_IMAGE && file.getResourceId() != null) {
+    if (file.getProductId() != null) {
       String previousKey =
           jdbc.query(
               "select image_object_key from products where tenant_id=? and id=?",
               result -> result.next() ? result.getString(1) : null,
               file.getTenantId(),
-              file.getResourceId());
+              file.getProductId());
       int updated =
           jdbc.update(
               """
@@ -134,7 +132,7 @@ public class FileService {
               file.getObjectKey(),
               Timestamp.from(now),
               file.getTenantId(),
-              file.getResourceId());
+              file.getProductId());
       if (updated != 1) throw new NotFoundException("Product");
       if (previousKey != null && !previousKey.equals(file.getObjectKey())) {
         repository
@@ -152,7 +150,7 @@ public class FileService {
         "STORED_FILE",
         fileId,
         "SUCCESS",
-        Map.of("purpose", file.getPurpose().name()));
+        Map.of("productId", file.getProductId()));
     return new FileDtos.ConfirmFileResponse(file.getId(), file.getStatus().name(), now);
   }
 
@@ -175,7 +173,7 @@ public class FileService {
         repository
             .findByObjectKeyAndTenantId(objectKey, currentUser.tenantId())
             .filter(candidate -> candidate.getStatus() == StoredFile.Status.CONFIRMED)
-            .filter(candidate -> productId.equals(candidate.getResourceId()))
+            .filter(candidate -> productId.equals(candidate.getProductId()))
             .orElse(null);
     if (file == null) return null;
     String url = storage.presignGet(file.getObjectKey(), presignValidity).url();
@@ -204,7 +202,7 @@ public class FileService {
         "STORED_FILE",
         fileId,
         "SUCCESS",
-        Map.of("purpose", file.getPurpose().name()));
+        Map.of("productId", file.getProductId()));
   }
 
   @Transactional(readOnly = true)

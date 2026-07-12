@@ -9,7 +9,6 @@ public class AppProperties {
   private final Jwt jwt = new Jwt();
   private final Security security = new Security();
   private final Storage storage = new Storage();
-  private final ImportConfig importConfig = new ImportConfig();
   private final Seed seed = new Seed();
 
   public Jwt getJwt() {
@@ -22,10 +21,6 @@ public class AppProperties {
 
   public Storage getStorage() {
     return storage;
-  }
-
-  public ImportConfig getImportConfig() {
-    return importConfig;
   }
 
   public Seed getSeed() {
@@ -173,45 +168,6 @@ public class AppProperties {
 
     public void setPresignedExpirationSeconds(long v) {
       presignedExpirationSeconds = v;
-    }
-  }
-
-  public static class ImportConfig {
-    private long maxFileSize = 20 * 1024 * 1024;
-    private long legacySpreadsheetMaxFileSize = 5 * 1024 * 1024;
-    private int batchSize = 200;
-    private int maxRows = 20_000;
-
-    public long getMaxFileSize() {
-      return maxFileSize;
-    }
-
-    public void setMaxFileSize(long v) {
-      maxFileSize = v;
-    }
-
-    public long getLegacySpreadsheetMaxFileSize() {
-      return legacySpreadsheetMaxFileSize;
-    }
-
-    public void setLegacySpreadsheetMaxFileSize(long v) {
-      legacySpreadsheetMaxFileSize = v;
-    }
-
-    public int getBatchSize() {
-      return batchSize;
-    }
-
-    public void setBatchSize(int v) {
-      batchSize = v;
-    }
-
-    public int getMaxRows() {
-      return maxRows;
-    }
-
-    public void setMaxRows(int v) {
-      maxRows = v;
     }
   }
 

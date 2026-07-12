@@ -13,7 +13,7 @@ describe('mobile-primary layout contract', () => {
 
   it('keeps dialogs, actions, and data tables inside a phone viewport', () => {
     expect(mobileRules).toContain('max-height: calc(100dvh - 20px)')
-    expect(mobileRules).toMatch(/\.wizard-actions[^}]*flex-direction:\s*column/s)
+    expect(mobileRules).toMatch(/\.el-dialog__footer[^}]*flex-direction:\s*column/s)
     expect(mobileRules).toContain('overflow-x: auto')
   })
 })

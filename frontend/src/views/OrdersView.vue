@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
 import { nearestEnabledEventId } from '@/services/events'
+import { advanceAmountEntry, submittedAmounts } from '@/services/rapidEntry'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
 import type { Order, OrderBatchCreateResponse, PageResponse, SalesEvent } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+
+interface FocusableInput {
+  focus?: () => void
+}
 
 const { t } = useI18n()
 const router = useRouter()
@@ -20,45 +25,33 @@ const { money, dateTime, defaultCurrency } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const deletingId = ref('')
-const dialogOpen = ref(false)
-const batchCreateOpen = ref(false)
+const entryOpen = ref(false)
+const editOpen = ref(false)
 const editingOrderId = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const eventFilter = ref('')
 const page = ref<PageResponse<Order>>(normalizePage([]))
 const events = ref<SalesEvent[]>([])
-const form = reactive({
+const amountInputs = ref<Array<FocusableInput | null>>([])
+const entry = reactive({
   eventId: '',
-  orderDate: new Date().toISOString(),
-  currency: 'EUR',
-  totalAmount: 0,
-  paymentMethod: 'OTHER',
-  paymentStatus: 'PAID',
+  orderDate: '',
+  amounts: [null] as Array<number | null>,
 })
-const batchForm = reactive({
-  eventId: '',
-  currency: 'EUR',
-  paymentMethod: 'OTHER',
-  orderDate: new Date().toISOString(),
-  amounts: [0] as number[],
-})
+const edit = reactive({ eventId: '', orderDate: '', totalAmount: 0 })
 
 const activeEvents = computed(() => events.value.filter((event) => event.enabled))
-const formEvents = computed(() => {
-  const selected = events.value.find((event) => event.id === form.eventId)
+const editEvents = computed(() => {
+  const selected = events.value.find((event) => event.id === edit.eventId)
   return selected && !selected.enabled ? [selected, ...activeEvents.value] : activeEvents.value
 })
-const dialogTitle = computed(() =>
-  editingOrderId.value ? t('orders.editOrder') : t('orders.createOrder'),
+const validEntryAmounts = computed(() => {
+  return submittedAmounts(entry.amounts)
+})
+const entryTotal = computed(() =>
+  validEntryAmounts.value.reduce<number>((sum, amount) => sum + Number(amount || 0), 0),
 )
-const batchTotal = computed(() =>
-  batchForm.amounts.reduce((sum, amount) => sum + Number(amount || 0), 0),
-)
-
-function nearestEventId() {
-  return nearestEnabledEventId(events.value)
-}
 
 async function load() {
   loading.value = true
@@ -91,81 +84,96 @@ function eventLabel(event: SalesEvent) {
   return `${event.name} · ${event.startDate} — ${event.endDate}`
 }
 
-function resetForm(eventId: string) {
-  Object.assign(form, {
-    eventId,
-    orderDate: new Date().toISOString(),
-    currency: defaultCurrency.value,
-    totalAmount: 0,
-    paymentMethod: 'OTHER',
-    paymentStatus: 'PAID',
+function setAmountInput(element: unknown, index: number) {
+  amountInputs.value[index] = element as FocusableInput | null
+}
+
+async function focusAmount(index: number) {
+  await nextTick()
+  amountInputs.value[index]?.focus?.()
+}
+
+function openEntry() {
+  Object.assign(entry, {
+    eventId: nearestEnabledEventId(events.value),
+    orderDate: '',
+    amounts: [null],
   })
+  entryOpen.value = true
+  void focusAmount(0)
 }
 
-function openCreate() {
-  editingOrderId.value = ''
-  resetForm(nearestEventId())
-  dialogOpen.value = true
+function addAmount() {
+  if (entry.amounts.length >= 100) return
+  entry.amounts.push(null)
+  void focusAmount(entry.amounts.length - 1)
 }
 
-function openEdit(order: Order) {
-  editingOrderId.value = order.id
-  Object.assign(form, {
-    eventId: order.eventId ?? '',
-    orderDate: order.orderDate,
-    currency: order.currency,
-    totalAmount: Number(order.totalAmount),
-    paymentMethod: order.paymentMethod ?? 'OTHER',
-    paymentStatus: order.paymentStatus ?? 'PAID',
-  })
-  dialogOpen.value = true
+function removeAmount(index: number) {
+  if (entry.amounts.length === 1) {
+    entry.amounts[0] = null
+    return
+  }
+  entry.amounts.splice(index, 1)
+  amountInputs.value.splice(index, 1)
 }
 
-function openBatchCreate() {
-  Object.assign(batchForm, {
-    eventId: nearestEventId(),
-    currency: defaultCurrency.value,
-    paymentMethod: 'OTHER',
-    orderDate: new Date().toISOString(),
-    amounts: [0],
-  })
-  batchCreateOpen.value = true
+function advanceAmount(index: number) {
+  const next = advanceAmountEntry(entry.amounts, index)
+  entry.amounts = next.values
+  void focusAmount(next.focusIndex)
 }
 
-function addBatchRow() {
-  if (batchForm.amounts.length < 100) batchForm.amounts.push(0)
-}
-
-function removeBatchRow(index: number) {
-  if (batchForm.amounts.length > 1) batchForm.amounts.splice(index, 1)
-}
-
-async function saveOrder() {
-  if (!form.eventId || !form.orderDate || form.totalAmount <= 0) {
+async function recordBatch() {
+  const amounts = validEntryAmounts.value
+  if (
+    !entry.eventId ||
+    !entry.orderDate ||
+    !amounts.length ||
+    amounts.some((amount) => amount == null || amount <= 0)
+  ) {
     ElMessage.warning(t('errors.validation'))
     return
   }
   saving.value = true
   try {
-    const event = events.value.find((candidate) => candidate.id === form.eventId)
-    const payload = {
-      totalAmount: form.totalAmount,
-      salesChannel: 'EXHIBITION',
-      eventId: form.eventId,
-      eventName: event?.name ?? null,
-      currency: form.currency,
-      paymentMethod: form.paymentMethod,
-      paymentStatus: form.paymentStatus,
-      orderDate: form.orderDate,
-    }
-    if (editingOrderId.value) {
-      await api.put(`/orders/${editingOrderId.value}`, payload)
-      ElMessage.success(t('orders.updated'))
-    } else {
-      await api.post('/orders', payload)
-      ElMessage.success(t('orders.recorded'))
-    }
-    dialogOpen.value = false
+    const { data } = await api.post<OrderBatchCreateResponse>('/orders/batch', {
+      eventId: entry.eventId,
+      orderDate: entry.orderDate,
+      orders: amounts.map((totalAmount) => ({ totalAmount })),
+    })
+    ElMessage.success(t('orders.batchRecorded', { count: data.orderCount }))
+    entry.amounts = [null]
+    amountInputs.value = []
+    await load()
+    await focusAmount(0)
+  } catch (error) {
+    showError(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+function openEdit(order: Order) {
+  editingOrderId.value = order.id
+  Object.assign(edit, {
+    eventId: order.eventId,
+    orderDate: order.orderDate,
+    totalAmount: Number(order.totalAmount),
+  })
+  editOpen.value = true
+}
+
+async function saveEdit() {
+  if (!edit.eventId || !edit.orderDate || edit.totalAmount <= 0) {
+    ElMessage.warning(t('errors.validation'))
+    return
+  }
+  saving.value = true
+  try {
+    await api.put(`/orders/${editingOrderId.value}`, edit)
+    ElMessage.success(t('orders.updated'))
+    editOpen.value = false
     await load()
   } catch (error) {
     showError(error)
@@ -197,35 +205,6 @@ async function deleteOrder(order: Order) {
   }
 }
 
-async function createBatchOrders() {
-  if (
-    !batchForm.eventId ||
-    !batchForm.orderDate ||
-    batchForm.amounts.some((amount) => Number(amount) <= 0)
-  ) {
-    ElMessage.warning(t('errors.validation'))
-    return
-  }
-  saving.value = true
-  try {
-    const { data } = await api.post<OrderBatchCreateResponse>('/orders/batch', {
-      eventId: batchForm.eventId,
-      currency: batchForm.currency,
-      paymentMethod: batchForm.paymentMethod,
-      paymentStatus: 'PAID',
-      orderDate: batchForm.orderDate,
-      orders: batchForm.amounts.map((totalAmount) => ({ totalAmount })),
-    })
-    ElMessage.success(t('orders.batchRecorded', { count: data.orderCount }))
-    batchCreateOpen.value = false
-    await load()
-  } catch (error) {
-    showError(error)
-  } finally {
-    saving.value = false
-  }
-}
-
 onMounted(load)
 </script>
 
@@ -237,8 +216,7 @@ onMounted(load)
       :subtitle="t('orders.subtitle')"
     >
       <template #actions>
-        <ElButton :icon="Plus" @click="openCreate">{{ t('orders.newOrder') }}</ElButton>
-        <ElButton type="primary" :icon="Plus" @click="openBatchCreate">{{
+        <ElButton type="primary" :icon="Plus" @click="openEntry">{{
           t('orders.batchRecord')
         }}</ElButton>
       </template>
@@ -281,9 +259,7 @@ onMounted(load)
         <ElTableColumn :label="t('orders.orderedAt')" min-width="180">
           <template #default="scope">{{ dateTime(scope.row.orderDate) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="t('orders.event')" min-width="240">
-          <template #default="scope">{{ scope.row.eventName || '—' }}</template>
-        </ElTableColumn>
+        <ElTableColumn prop="eventName" :label="t('orders.event')" min-width="240" />
         <ElTableColumn :label="t('orders.total')" min-width="140" align="right">
           <template #default="scope">
             <strong>{{ money(scope.row.totalAmount, scope.row.currency) }}</strong>
@@ -308,8 +284,8 @@ onMounted(load)
       </ElTable>
 
       <EmptyState v-else :title="t('orders.emptyTitle')" :body="t('orders.emptyBody')">
-        <ElButton type="primary" :icon="Plus" @click="openCreate">{{
-          t('orders.newOrder')
+        <ElButton type="primary" :icon="Plus" @click="openEntry">{{
+          t('orders.batchRecord')
         }}</ElButton>
       </EmptyState>
 
@@ -325,52 +301,8 @@ onMounted(load)
       />
     </section>
 
-    <ElDialog v-model="dialogOpen" :title="dialogTitle" width="min(620px, 96vw)" destroy-on-close>
-      <ElForm label-position="top" class="form-grid">
-        <ElFormItem class="span-2" :label="t('orders.event')" required>
-          <ElSelect
-            v-model="form.eventId"
-            class="full-width"
-            filterable
-            :placeholder="t('orders.selectEvent')"
-          >
-            <ElOption
-              v-for="event in formEvents"
-              :key="event.id"
-              :label="eventLabel(event)"
-              :value="event.id"
-              :disabled="!event.enabled"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="t('orders.orderedAt')" required>
-          <ElDatePicker
-            v-model="form.orderDate"
-            type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
-            class="full-width"
-          />
-        </ElFormItem>
-        <ElFormItem :label="t('orders.totalAmount')" required>
-          <ElInputNumber
-            v-model="form.totalAmount"
-            :min="0.01"
-            :precision="2"
-            controls-position="right"
-            class="full-width"
-          />
-        </ElFormItem>
-      </ElForm>
-      <template #footer>
-        <ElButton @click="dialogOpen = false">{{ t('common.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="saveOrder">{{
-          saving ? t('common.saving') : editingOrderId ? t('common.save') : t('orders.createOrder')
-        }}</ElButton>
-      </template>
-    </ElDialog>
-
     <ElDialog
-      v-model="batchCreateOpen"
+      v-model="entryOpen"
       :title="t('orders.batchRecord')"
       width="min(760px, 96vw)"
       destroy-on-close
@@ -379,7 +311,7 @@ onMounted(load)
       <ElForm label-position="top" class="form-grid batch-order-context">
         <ElFormItem :label="t('orders.event')" required>
           <ElSelect
-            v-model="batchForm.eventId"
+            v-model="entry.eventId"
             filterable
             class="full-width"
             :placeholder="t('orders.selectEvent')"
@@ -394,64 +326,91 @@ onMounted(load)
         </ElFormItem>
         <ElFormItem :label="t('orders.orderedAt')" required>
           <ElDatePicker
-            v-model="batchForm.orderDate"
+            v-model="entry.orderDate"
             type="datetime"
+            format="YYYY-MM-DD HH:00"
             value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
             class="full-width"
           />
-        </ElFormItem>
-        <ElFormItem :label="t('products.currency')" required>
-          <ElInput v-model="batchForm.currency" maxlength="3" />
-        </ElFormItem>
-        <ElFormItem :label="t('reports.paymentMethods')" required>
-          <ElSelect v-model="batchForm.paymentMethod" class="full-width">
-            <ElOption :label="t('reports.labels.CASH')" value="CASH" />
-            <ElOption :label="t('reports.labels.CARD')" value="CARD" />
-            <ElOption label="SumUp" value="SUMUP" />
-            <ElOption :label="t('reports.labels.OTHER')" value="OTHER" />
-          </ElSelect>
         </ElFormItem>
       </ElForm>
       <div class="batch-amount-editor">
         <div class="order-editor__heading">
           <span>
             <strong>{{ t('orders.batchAmounts') }}</strong>
-            <small>{{ t('common.items', { count: batchForm.amounts.length }) }}</small>
+            <small>{{ t('common.items', { count: validEntryAmounts.length }) }}</small>
           </span>
-          <ElButton
-            text
-            :icon="Plus"
-            :disabled="batchForm.amounts.length >= 100"
-            @click="addBatchRow"
-            >{{ t('orders.addAmount') }}</ElButton
-          >
+          <ElButton text :icon="Plus" :disabled="entry.amounts.length >= 100" @click="addAmount">{{
+            t('orders.addAmount')
+          }}</ElButton>
         </div>
-        <div v-for="(amount, index) in batchForm.amounts" :key="index" class="batch-amount-row">
+        <div v-for="(amount, index) in entry.amounts" :key="index" class="batch-amount-row">
           <span>{{ index + 1 }}</span>
           <ElInputNumber
-            v-model="batchForm.amounts[index]"
+            :ref="(element: unknown) => setAmountInput(element, index)"
+            v-model="entry.amounts[index]"
             :min="0.01"
             :precision="2"
             controls-position="right"
+            @keyup.enter.prevent="advanceAmount(index)"
           />
           <ElButton
             text
             type="danger"
             :icon="Delete"
-            :disabled="batchForm.amounts.length === 1"
             :aria-label="t('common.delete')"
-            @click="removeBatchRow(index)"
+            @click="removeAmount(index)"
           />
         </div>
         <div class="order-total">
           <span>{{ t('orders.batchTotal') }}</span>
-          <strong>{{ money(batchTotal, batchForm.currency) }}</strong>
+          <strong>{{ money(entryTotal, defaultCurrency) }}</strong>
         </div>
       </div>
       <template #footer>
-        <ElButton @click="batchCreateOpen = false">{{ t('common.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="createBatchOrders">{{
+        <ElButton @click="entryOpen = false">{{ t('common.close') }}</ElButton>
+        <ElButton type="primary" :loading="saving" @click="recordBatch">{{
           saving ? t('common.saving') : t('orders.recordBatch')
+        }}</ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog v-model="editOpen" :title="t('orders.editOrder')" width="min(620px, 96vw)">
+      <ElForm label-position="top" class="form-grid">
+        <ElFormItem class="span-2" :label="t('orders.event')" required>
+          <ElSelect v-model="edit.eventId" class="full-width" filterable>
+            <ElOption
+              v-for="event in editEvents"
+              :key="event.id"
+              :label="eventLabel(event)"
+              :value="event.id"
+              :disabled="!event.enabled"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem :label="t('orders.orderedAt')" required>
+          <ElDatePicker
+            v-model="edit.orderDate"
+            type="datetime"
+            format="YYYY-MM-DD HH:00"
+            value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+            class="full-width"
+          />
+        </ElFormItem>
+        <ElFormItem :label="t('orders.totalAmount')" required>
+          <ElInputNumber
+            v-model="edit.totalAmount"
+            :min="0.01"
+            :precision="2"
+            controls-position="right"
+            class="full-width"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="editOpen = false">{{ t('common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="saving" @click="saveEdit">{{
+          saving ? t('common.saving') : t('common.save')
         }}</ElButton>
       </template>
     </ElDialog>

@@ -55,18 +55,6 @@ const routes: RouteRecordRaw[] = [
         meta: { titleKey: 'nav.events', userOnly: true },
       },
       {
-        path: 'imports',
-        name: 'imports',
-        component: () => import('@/views/ImportsView.vue'),
-        meta: { titleKey: 'nav.imports', userOnly: true },
-      },
-      {
-        path: 'imports/new',
-        name: 'import-new',
-        component: () => import('@/views/ImportWizardView.vue'),
-        meta: { titleKey: 'import.title', userOnly: true },
-      },
-      {
         path: 'reports',
         name: 'reports',
         component: () => import('@/views/ReportsView.vue'),

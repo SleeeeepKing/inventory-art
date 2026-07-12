@@ -8,11 +8,9 @@ const label = computed(() =>
   te(`status.${props.status}`) ? t(`status.${props.status}`) : props.status.replaceAll('_', ' '),
 )
 const tone = computed(() => {
-  if (['COMPLETED', 'ENABLED', 'CONFIRMED', 'READY'].includes(props.status)) return 'success'
-  if (['FAILED', 'CANCELLED', 'DISABLED'].includes(props.status)) return 'danger'
-  if (['ANALYZING', 'IMPORTING', 'UPLOADED', 'DRAFT'].includes(props.status)) return 'info'
-  if (['PARTIALLY_REFUNDED', 'COMPLETED_WITH_ERRORS', 'UNALLOCATED'].includes(props.status))
-    return 'warning'
+  if (['ENABLED', 'SUCCESS', 'USER'].includes(props.status)) return 'success'
+  if (['FAILED', 'DISABLED'].includes(props.status)) return 'danger'
+  if (props.status === 'ADMIN') return 'info'
   return 'neutral'
 })
 </script>

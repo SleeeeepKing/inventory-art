@@ -2,7 +2,6 @@ package com.inventoryart.common;
 
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.inventory.MovementType;
-import com.inventoryart.order.SalesChannel;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -31,9 +30,7 @@ public class AdminDataQueryService {
       UUID userId,
       Instant requestedFrom,
       Instant requestedTo,
-      SalesChannel channel,
       UUID eventId,
-      String status,
       String q,
       int page,
       int requestedSize) {
@@ -42,31 +39,32 @@ public class AdminDataQueryService {
     int safePage = Math.max(page, 0);
     MapSqlParameterSource params =
         baseParams(tenantId, userId, range, safePage, size)
-            .addValue("channel", channel == null ? null : channel.name(), Types.VARCHAR)
             .addValue("eventId", eventId == null ? null : eventId.toString(), Types.VARCHAR)
-            .addValue("status", blank(status), Types.VARCHAR)
-            .addValue("q", blank(q) == null ? "" : q.trim());
+            .addValue("q", q == null || q.isBlank() ? "" : q.trim());
     String where =
         """
             where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid))
               and (:userId is null or o.created_by=cast(:userId as uuid))
-              and (:channel is null or o.sales_channel=:channel)
               and (:eventId is null or o.event_id=cast(:eventId as uuid))
-              and (:status is null or o.status=:status)
               and o.order_date>=:from and o.order_date<:to
               and (:q='' or lower(o.order_number) like lower(concat('%',:q,'%'))
-                   or lower(coalesce(o.event_name,'')) like lower(concat('%',:q,'%')))
+                   or lower(e.name) like lower(concat('%',:q,'%')))
+            """;
+    String fromSql =
+        """
+            from orders o
+            join tenants t on t.id=o.tenant_id
+            join sales_events e on e.tenant_id=o.tenant_id and e.id=o.event_id
+            left join users u on u.id=o.created_by
             """;
     List<AdminOrderRow> rows =
         jdbc.query(
             """
-            select o.id,o.tenant_id,t.name tenant_name,o.order_number,o.status,o.sales_channel,
-                   o.event_id,o.event_name,o.currency,o.total_amount,o.order_date,
+            select o.id,o.tenant_id,t.name tenant_name,o.order_number,
+                   o.event_id,e.name event_name,o.currency,o.total_amount,o.order_date,
                    o.created_by,u.display_name created_by_name
-              from orders o
-              join tenants t on t.id=o.tenant_id
-              left join users u on u.id=o.created_by
             """
+                + fromSql
                 + where
                 + " order by o.order_date desc limit :limit offset :offset",
             params,
@@ -76,8 +74,6 @@ public class AdminDataQueryService {
                     rs.getObject("tenant_id", UUID.class),
                     rs.getString("tenant_name"),
                     rs.getString("order_number"),
-                    rs.getString("status"),
-                    rs.getString("sales_channel"),
                     rs.getObject("event_id", UUID.class),
                     rs.getString("event_name"),
                     rs.getString("currency"),
@@ -85,7 +81,7 @@ public class AdminDataQueryService {
                     rs.getTimestamp("order_date").toInstant(),
                     rs.getObject("created_by", UUID.class),
                     rs.getString("created_by_name")));
-    long total = count("select count(*) from orders o " + where, params);
+    long total = count("select count(*) " + fromSql + where, params);
     return page(rows, safePage, size, total, "orderDate: DESC");
   }
 
@@ -97,7 +93,6 @@ public class AdminDataQueryService {
       Instant requestedTo,
       MovementType type,
       UUID productId,
-      SalesChannel channel,
       UUID eventId,
       int page,
       int requestedSize) {
@@ -108,7 +103,6 @@ public class AdminDataQueryService {
         baseParams(tenantId, userId, range, safePage, size)
             .addValue("type", type == null ? null : type.name(), Types.VARCHAR)
             .addValue("productId", productId == null ? null : productId.toString(), Types.VARCHAR)
-            .addValue("channel", channel == null ? null : channel.name(), Types.VARCHAR)
             .addValue("eventId", eventId == null ? null : eventId.toString(), Types.VARCHAR);
     String fromSql =
         """
@@ -117,6 +111,7 @@ public class AdminDataQueryService {
             join products p on p.tenant_id=m.tenant_id and p.id=m.product_id
             left join users u on u.id=m.operator_id
             left join inventory_sale_batches b on b.tenant_id=m.tenant_id and b.id=m.sale_batch_id
+            left join sales_events e on e.tenant_id=b.tenant_id and e.id=b.event_id
             """;
     String where =
         """
@@ -124,7 +119,6 @@ public class AdminDataQueryService {
               and (:userId is null or m.operator_id=cast(:userId as uuid))
               and (:type is null or m.movement_type=:type)
               and (:productId is null or m.product_id=cast(:productId as uuid))
-              and (:channel is null or b.sales_channel=:channel)
               and (:eventId is null or b.event_id=cast(:eventId as uuid))
               and m.created_at>=:from and m.created_at<:to
             """;
@@ -132,8 +126,8 @@ public class AdminDataQueryService {
         jdbc.query(
             """
             select m.id,m.tenant_id,t.name tenant_name,m.product_id,p.sku,p.name product_name,
-                   m.movement_type,m.quantity,m.stock_before,m.stock_after,m.unit_price,
-                   b.currency,b.sales_channel,b.event_id,b.event_name,b.attributed_date,
+                   m.movement_type,m.quantity,m.stock_before,m.stock_after,
+                   b.event_id,e.name event_name,b.attributed_date,
                    m.remark,m.operator_id,u.display_name operator_name,m.created_at
             """
                 + fromSql
@@ -152,9 +146,6 @@ public class AdminDataQueryService {
                     rs.getInt("quantity"),
                     rs.getInt("stock_before"),
                     rs.getInt("stock_after"),
-                    rs.getBigDecimal("unit_price"),
-                    rs.getString("currency"),
-                    rs.getString("sales_channel"),
                     rs.getObject("event_id", UUID.class),
                     rs.getString("event_name"),
                     rs.getObject("attributed_date", LocalDate.class),
@@ -195,10 +186,6 @@ public class AdminDataQueryService {
     return value == null ? 0 : value;
   }
 
-  private static String blank(String value) {
-    return value == null || value.isBlank() ? null : value.trim();
-  }
-
   private static <T> PageResponse<T> page(
       List<T> rows, int page, int size, long total, String sort) {
     int pages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
@@ -212,8 +199,6 @@ public class AdminDataQueryService {
       UUID tenantId,
       String tenantName,
       String orderNumber,
-      String status,
-      String salesChannel,
       UUID eventId,
       String eventName,
       String currency,
@@ -233,9 +218,6 @@ public class AdminDataQueryService {
       int quantity,
       int stockBefore,
       int stockAfter,
-      BigDecimal unitPrice,
-      String currency,
-      String salesChannel,
       UUID eventId,
       String eventName,
       LocalDate attributedDate,

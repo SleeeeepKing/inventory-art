@@ -19,7 +19,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -81,6 +80,10 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
   ResponseEntity<ApiError> methodNotAllowed(
       HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+    if (isRemovedOrderWriteEndpoint(request)) {
+      return response(
+          HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", request, null);
+    }
     return response(
         HttpStatus.METHOD_NOT_ALLOWED,
         "METHOD_NOT_ALLOWED",
@@ -89,14 +92,12 @@ public class GlobalExceptionHandler {
         null);
   }
 
-  @ExceptionHandler(MaxUploadSizeExceededException.class)
-  ResponseEntity<ApiError> tooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
-    return response(
-        HttpStatus.PAYLOAD_TOO_LARGE,
-        "FILE_TOO_LARGE",
-        "Uploaded file is too large",
-        request,
-        null);
+  private boolean isRemovedOrderWriteEndpoint(HttpServletRequest request) {
+    if (!"POST".equals(request.getMethod())) return false;
+    String path = request.getRequestURI();
+    return path.equals("/api/v1/orders")
+        || path.equals("/api/v1/orders/batch-confirm")
+        || path.matches("/api/v1/orders/[^/]+/(confirm|allocate|refunds)");
   }
 
   @ExceptionHandler(Exception.class)

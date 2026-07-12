@@ -1,149 +1,62 @@
 # 系统架构
 
-## 目标与关键不变量
+## 设计目标
 
-Inventory Art 是一个可部署的多租户模块化单体。设计优先级依次为数据隔离、库存/订单一致性、SumUp 导入幂等、可运维性和后续扩展能力。
-
-以下规则贯穿所有模块：
-
-- 普通用户的 `tenantId` 只来自认证上下文，不能来自请求体、查询参数或路径中的任意值。
-- `InventoryService` 是 `products.current_stock` 的唯一业务写入口；每次变更与库存流水在同一事务提交。
-- 订单必须记录明确的销售金额，商品及数量只是可选销售明细，不能覆盖订单金额。
-- 订单、退款和 SumUp 销售导入不调用 `InventoryService`；库存只能在独立库存模块调整。
-- 业务历史不通过物理删除“修正”；订单取消、退款和导入撤销通过状态变化表达。
-- 不同币种不直接相加；报表按币种分组。
-- 时间在数据库中使用 UTC `TIMESTAMPTZ`，展示和输入范围按 Tenant 时区解释。
-
-## 运行时拓扑
-
-```mermaid
-flowchart LR
-    Browser["Browser"] -->|"HTTPS SPA"| Pages["Cloudflare Pages\nVue static files"]
-    Browser -->|"HTTPS /api/v1"| Railway["Railway\nSpring Boot container"]
-    Railway -->|"TLS JDBC"| Neon["Neon PostgreSQL\nFrankfurt"]
-    Railway -->|"S3-compatible API"| R2["Cloudflare R2\nprivate bucket"]
-    Browser -->|"short-lived presigned PUT/GET"| R2
-```
-
-生产后端无本地持久化依赖。数据库状态、业务元数据和对象 key 存入 Neon；图片与原始导入文件存入私有 R2。浏览器只接收单对象、单操作、短期有效的预签名 URL，不接收 R2 密钥。
-
-本地 Compose 用 PostgreSQL 替代 Neon、MinIO 替代 R2，并运行相同后端接口和 Flyway migration。
-
-## 后端模块
-
-后端位于 `backend/src/main/java/com/inventoryart`，采用按业务能力分包的模块化单体。
-
-| 模块                              | 职责                                                               |
-| --------------------------------- | ------------------------------------------------------------------ |
-| `auth` / `security`               | 登录、JWT、Refresh Token 轮换、认证上下文、角色授权、登录限流      |
-| `tenant` / `user`                 | Tenant、用户、个人设置、ADMIN 用户与 Tenant 管理                   |
-| `product`                         | 商品 CRUD、SKU 约束、图片关联、销售聚合视图                        |
-| `inventory`                       | 行锁、最多 100 个商品的原子售出批次、实际售价、独立库存流水和导出  |
-| `order` / `payment`               | 金额必填、商品可选的订单状态机、展会金额批量补录、支付、取消和退款 |
-| `sumup`                           | 文件上传、解析、映射、预览、幂等导入、外部交易和撤销               |
-| `report`                          | 集中的数据源纳入策略、KPI、趋势和分组聚合                          |
-| `storage`                         | `StorageService` 以及 Local、MinIO、R2 实现，预签名和对象确认      |
-| `audit`                           | 安全与业务关键操作审计，尤其是 ADMIN 跨 Tenant 访问                |
-| `common` / `exception` / `config` | 分页、金额/时间、公用配置、traceId、统一错误响应                   |
-
-Controller 仅处理 HTTP、DTO 校验和认证入口；Service 负责事务与业务规则；Repository 负责 Tenant-aware 查询。JPA Entity 不直接作为 API 响应。
-
-依赖方向保持为“HTTP/DTO → Service → Repository/Storage”，跨业务写操作由上层事务服务协调。报表只读取订单、交易和汇总，不反向依赖 Controller。
-
-## 前端模块
-
-前端位于 `frontend/src`：
+Inventory Art 是一个多租户模块化单体，服务于展会结束后的人工销售数据补录。系统只建模纸笔记录能够支撑的事实，避免在金额和商品数量之间制造无法验证的关联。
 
 ```text
-src/
-├── api/          Axios 实例、Token 刷新队列和模块 API
-├── components/   可复用表格、表单、状态和上传组件
-├── layouts/      USER/ADMIN 共用管理布局
-├── locales/      en、zh-CN、fr-FR，同构 key 集
-├── router/       路由定义、认证和角色守卫
-├── stores/       会话、用户设置和业务状态
-├── types/        API DTO 与页面类型
-├── utils/        金额、数字、日期、错误格式化
-└── views/        登录、业务页面、管理员页面和错误页
+Vue 单页应用
+      │ REST/JSON
+Spring Boot 模块化单体
+      ├── PostgreSQL（业务数据、审计）
+      └── 本地或 S3 兼容存储（商品图片）
 ```
 
-Pinia 会话 Store 只在内存持有 Access Token。Axios 遇到可刷新认证错误时使用单一刷新队列，防止并发请求触发多次 Refresh Token 轮换。路由和菜单按角色改善体验，但后端始终是最终授权者。
+## 业务边界
 
-## 关键数据流
+| 模块                       | 职责                                  |
+| -------------------------- | ------------------------------------- |
+| `auth` / `user` / `tenant` | 登录、令牌、用户和 Tenant 配置        |
+| `event`                    | 展会日期范围和启用状态                |
+| `order`                    | 展会小时金额记录、编辑和删除          |
+| `product`                  | 商品目录、标准售价和成本资料          |
+| `inventory`                | 库存流水、精确修正和商品销量批次      |
+| `report`                   | 金额与数量两套独立聚合                |
+| `storage`                  | 商品图片元数据和对象访问              |
+| `admin` / `audit`          | Tenant 管理、跨 Tenant 查询和操作审计 |
 
-### 登录与刷新
+金额报表只读取 `orders`。商品报表和商品累计销量只读取 `inventory_movements` 中的 `SALE` 流水。商品标准售价与成本不参与成交收入计算。
 
-1. 登录端点校验“IP + 标准化用户名”频率、用户状态和 BCrypt 密码。
-2. 服务端签发短期 JWT，并把随机 Refresh Token 作为 HttpOnly Cookie 返回；数据库只保存 SHA-256 哈希和令牌族信息。
-3. 前端把 Access Token 保存在内存，并使用登录响应中的 `preferredLocale` 切换语言。
-4. Access Token 过期后，刷新端点校验允许的 Origin、轮换 Refresh Token 并签发新 JWT。
-5. 已轮换令牌被再次使用时，撤销其整个令牌族；退出也撤销当前令牌。
+## 交易写入
 
-### 订单与库存
+前端选择展会和小时后提交 1 至 100 个正数金额。后端完成以下校验：
 
-```mermaid
-flowchart LR
-    OrdersUI["订单页面"] -->|"金额 + 可选商品数量"| OrderService
-    OrderService -->|"只写销售记录"| OrdersDB[("orders / order_items")]
-    InventoryUI["库存页面"] -->|"售出批次 / 新增库存"| InventoryService
-    InventoryService -->|"行锁、校验、批次与流水"| InventoryDB[("inventory_sale_batches / products.current_stock / inventory_movements")]
-    OrderService -. "无调用关系" .- InventoryService
-```
+1. 展会属于当前 Tenant 且可用。
+2. 输入时间按 Tenant 时区截断到整点。
+3. 截断后的本地日期位于展会日期范围内。
+4. 币种取 Tenant 默认币种。
+5. 整批在一个事务内写入，任一金额非法则全部失败。
 
-订单创建、批量补录、确认、编辑、取消和退款都不会改变库存。展会批量补录先选择展会和共同交易时间，再原子写入最多 100 笔金额；商品销量由库存售出批次独立记录。库存售出先锁定同批商品，任一库存不足时整批回滚；展会批次使用展会结束日作为分析归属日，备注可空。
+每笔记录拥有独立系统订单号，后续可单独编辑或删除。
 
-### 文件存储
+## 商品销量写入
 
-1. API 根据当前 Tenant 和目标资源生成 `tenants/{tenantId}/.../{uuid}.{ext}` key，并创建待确认 `stored_files` 记录。
-2. 浏览器用预签名 PUT 直传 MinIO/R2。
-3. 客户端通知后端确认；后端通过 HEAD 校验内容类型、大小和 checksum，再绑定业务资源。
-4. 下载使用短期预签名 GET；删除为受权操作并写审计。未确认对象由清理任务回收。
+销量请求只包含展会和商品数量。销量归属日期为展会结束日。后端在同一事务中锁定并扣减库存、创建销量批次和 `SALE` 流水；重复商品会聚合处理，任一商品库存不足则整批回滚。
 
-SumUp 导入文件也可由服务端流式上传到 StorageService，以便同步计算 SHA-256 和清理敏感数据边界。
+普通库存操作支持新增、减少和精确修正，并保留操作备注、操作人和审计记录。
 
-### SumUp 导入
+## 时间与币种
 
-导入是一个以 `import_batches.status` 和 `analysis_version` 驱动的持久化工作流：
+- 数据库时间戳统一保存为 UTC。
+- Tenant 保存时区，交易小时的解释和展会日期校验使用该时区。
+- Tenant 默认币种在交易创建时写入订单，保证历史数据不受之后配置变化影响。
 
-```text
-UPLOADED → ANALYZING → READY_FOR_MAPPING → READY_FOR_CONFIRMATION
-         → IMPORTING → COMPLETED / COMPLETED_WITH_ERRORS
-                                  ↘ FAILED
-COMPLETED / COMPLETED_WITH_ERRORS → REVERSED
-```
+## 安全与运维
 
-新 SumUp 批次在上传前必须选择启用展会。解析结果每 200 行写入 `import_rows` 并清理持久化上下文，不把整个源文件保存在内存。正式确认在一个数据库事务中完成；生成订单统一使用展会渠道，SumUp 只作为支付方式。完整规则见 [sumup-import.md](sumup-import.md)。
+- Spring Security 验证 JWT，所有业务查询都显式包含 `tenant_id`。
+- Refresh Token 使用安全 Cookie，并支持轮换和撤销。
+- Flyway 负责数据库结构，Hibernate 只执行 `validate`。
+- `/actuator/health` 用于健康检查，日志包含 `traceId`。
+- 商品图片使用短期预签名 URL，Bucket 保持私有。
 
-### 报表
-
-`ReportSourcePolicy` 先决定记录是否纳入，再执行聚合：
-
-- 与手动订单关联的外部交易只计算订单。
-- SumUp 导入生成的订单只计算订单一次。
-- 商品销售汇总和会计汇总用于对账，不与逐笔数据同时进入主销售额。
-- 未分配交易可进入财务销售额，但不能进入具体商品销量。
-- 库存售出的 `数量 × 实际单价` 只进入独立库存售出分析，绝不进入 `ReportSourcePolicy` 的财务销售额。
-
-商品累计销售数据通过聚合查询返回，不反写 `products`。
-报表的估算商品成本使用商品当前 `cost_price` 乘以未退款数量；估算毛利为净销售额减去该成本。订单目前没有成本价快照，因此历史成本变化会影响这一估算，界面会明确标记为估算值。
-财务趋势默认按日，也可按 Tenant 时区按小时聚合；小时范围最多 31 天，管理员小时视图必须选择单一 Tenant。管理员订单/库存列表使用轻量 JDBC 投影，未选 Tenant 时范围最多 90 天，页大小上限 50，不加载订单明细。
-
-## i18n 与区域设置
-
-- UI 支持 `en`、`zh-CN`、`fr-FR`；英文是源语言和 fallback。
-- 未登录启动和新用户首次登录默认英文，不根据浏览器语言自动推断。
-- `users.preferred_locale` 保存 UI 偏好；登录、刷新会话和 `/api/v1/profile` 返回该值。
-- `tenants.locale` 是业务区域默认值，不能覆盖用户 UI 语言。
-- Element Plus locale、Vue I18n、`Intl.NumberFormat` 和 `Intl.DateTimeFormat` 同步切换；币种和时区仍来自 Tenant。
-
-## API 与错误边界
-
-- 公共前缀：`/api/v1`；ADMIN 使用独立 `/api/v1/admin/**` 路径。
-- 普通分页结构：`{items,page,size,totalElements,totalPages,sort}`。
-- 错误结构：`timestamp`、`status`、稳定业务 `code`、本地化 `message`、`path`、可选 `fieldErrors`、`traceId`。
-- 资源不属于当前 Tenant 时，普通用户得到 `404 RESOURCE_NOT_FOUND`，不泄露资源是否存在。
-- 未处理异常只返回通用错误和 traceId；堆栈仅写服务端日志且必须过滤敏感值。
-
-## 扩展边界
-
-当前 ADMIN 可以把多个 USER 分配到同一个 Tenant。架构保留但不提前实现以下扩展：自助成员邀请、Tenant 内细粒度角色、套餐/订阅、汇率服务、独立任务 Worker 和 SumUp API provider。拆分服务前应优先通过模块边界、索引和受限批处理扩展单体；只有独立扩缩容或故障域产生实际需求时才拆分。
+更多细节见 [数据库结构](database-schema.md)、[安全与租户隔离](security-and-tenancy.md) 和 [商品图片存储](r2-storage.md)。

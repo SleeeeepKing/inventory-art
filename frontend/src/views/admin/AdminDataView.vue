@@ -9,10 +9,9 @@ import { useFormatters } from '@/composables/useFormatters'
 import type { AdminTenant, PageResponse, SalesEvent, UserProfile } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import StatusPill from '@/components/StatusPill.vue'
 
 type Row = Record<string, unknown>
-type DataType = 'products' | 'orders' | 'inventory' | 'external-transactions' | 'imports'
+type DataType = 'products' | 'orders' | 'inventory'
 const { t } = useI18n()
 const { showError } = useApiFeedback()
 const { money, number, dateTime } = useFormatters()
@@ -27,7 +26,6 @@ const loading = ref(false)
 const currentPage = ref(1)
 const tenantId = ref('')
 const userId = ref('')
-const channel = ref('')
 const eventId = ref('')
 const range = ref<[Date, Date]>([start, new Date()])
 const dataType = ref<DataType>('orders')
@@ -36,8 +34,6 @@ const tabs = [
   { value: 'orders', key: 'admin.orders' },
   { value: 'inventory', key: 'admin.inventory' },
   { value: 'products', key: 'admin.products' },
-  { value: 'external-transactions', key: 'admin.transactions' },
-  { value: 'imports', key: 'admin.imports' },
 ] as const
 const supportsOperationalFilters = computed(() => ['orders', 'inventory'].includes(dataType.value))
 function text(row: Row, key: string) {
@@ -66,7 +62,6 @@ async function load() {
       size: 20,
       tenantId: tenantId.value || undefined,
       userId: supportsOperationalFilters.value && userId.value ? userId.value : undefined,
-      channel: supportsOperationalFilters.value && channel.value ? channel.value : undefined,
       eventId: supportsOperationalFilters.value && eventId.value ? eventId.value : undefined,
       ...(supportsOperationalFilters.value ? queryBounds() : {}),
     }
@@ -124,11 +119,6 @@ function searchUsers(query: string) {
     },
     query ? 250 : 0,
   )
-}
-function changeChannel() {
-  if (channel.value !== 'EXHIBITION') eventId.value = ''
-  currentPage.value = 1
-  void load()
 }
 function changeType() {
   currentPage.value = 1
@@ -209,16 +199,6 @@ onMounted(async () => {
         />
         <ElSelect
           v-if="supportsOperationalFilters"
-          v-model="channel"
-          clearable
-          :placeholder="t('orders.channel')"
-          @change="changeChannel"
-          ><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption
-            :label="t('orders.channels.online')"
-            value="ONLINE" /><ElOption :label="t('orders.channels.other')" value="OTHER"
-        /></ElSelect>
-        <ElSelect
-          v-if="supportsOperationalFilters && channel === 'EXHIBITION'"
           v-model="eventId"
           clearable
           filterable
@@ -259,11 +239,6 @@ onMounted(async () => {
           <ElTableColumn prop="orderNumber" :label="t('orders.orderNumber')" min-width="160" />
           <ElTableColumn prop="createdByName" :label="t('admin.operator')" min-width="150" />
           <ElTableColumn prop="eventName" :label="t('orders.event')" min-width="200" />
-          <ElTableColumn :label="t('common.status')">
-            <template #default="scope">
-              <StatusPill :status="text(scope.row, 'status')" />
-            </template>
-          </ElTableColumn>
           <ElTableColumn :label="t('orders.total')" align="right">
             <template #default="scope">
               {{ money(numeric(scope.row, 'totalAmount'), text(scope.row, 'currency')) }}
@@ -293,31 +268,11 @@ onMounted(async () => {
             }}</template></ElTableColumn
           >
           <ElTableColumn prop="eventName" :label="t('orders.event')" min-width="200" />
-          <ElTableColumn :label="t('inventory.actualPrice')" align="right" min-width="130"
-            ><template #default="scope">{{
-              scope.row.unitPrice == null
-                ? '—'
-                : money(numeric(scope.row, 'unitPrice'), text(scope.row, 'currency'))
-            }}</template></ElTableColumn
-          >
           <ElTableColumn :label="t('common.date')" min-width="170"
             ><template #default="scope">{{
               dateTime(text(scope.row, 'createdAt'))
             }}</template></ElTableColumn
           >
-        </template>
-        <template v-else>
-          <ElTableColumn prop="id" :label="t('common.details')" min-width="230" />
-          <ElTableColumn :label="t('common.status')">
-            <template #default="scope">
-              <StatusPill :status="text(scope.row, 'status')" />
-            </template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('common.created')">
-            <template #default="scope">
-              {{ dateTime(text(scope.row, 'createdAt')) }}
-            </template>
-          </ElTableColumn>
         </template>
       </ElTable>
       <EmptyState v-else :title="t('common.noData')" :body="t('admin.globalSubtitle')" />

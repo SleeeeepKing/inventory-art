@@ -15,7 +15,6 @@ import {
   List,
   Menu as MenuIcon,
   OfficeBuilding,
-  Operation,
   Setting,
   SwitchButton,
   User,
@@ -36,7 +35,6 @@ const primaryNav = [
   { to: '/inventory', key: 'nav.inventory', icon: Box },
   { to: '/orders', key: 'nav.orders', icon: Document },
   { to: '/events', key: 'nav.events', icon: Calendar },
-  { to: '/imports', key: 'nav.imports', icon: Operation },
   { to: '/reports', key: 'nav.reports', icon: DataAnalysis },
 ]
 const visiblePrimaryNav = computed(() =>

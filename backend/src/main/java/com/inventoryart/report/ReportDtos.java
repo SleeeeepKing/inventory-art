@@ -10,34 +10,15 @@ public final class ReportDtos {
 
   public record CurrencyMetrics(
       String currency,
-      BigDecimal grossSales,
-      BigDecimal discounts,
-      BigDecimal refunds,
-      BigDecimal netSales,
-      BigDecimal sumUpFees,
-      BigDecimal afterFees,
-      BigDecimal productCost,
-      BigDecimal estimatedGrossProfit,
-      long unitsSold,
-      long orderCount,
-      long successfulPaymentCount,
-      BigDecimal averageOrderValue) {}
-
-  public record DailyTrend(
-      LocalDate date, String currency, BigDecimal netSales, BigDecimal fees, long orders) {}
+      BigDecimal totalSales,
+      long transactionCount,
+      BigDecimal averageTransactionValue) {}
 
   public record TrendPoint(
-      String bucket, String currency, BigDecimal netSales, BigDecimal fees, long orders) {}
+      String bucket, String currency, BigDecimal totalSales, long transactions) {}
 
-  public record Breakdown(String label, String currency, BigDecimal netSales, long orders) {}
-
-  public record ProductRank(
-      UUID productId,
-      String sku,
-      String name,
-      String currency,
-      long quantity,
-      BigDecimal revenue) {}
+  public record Breakdown(
+      String label, String currency, BigDecimal totalSales, long transactions) {}
 
   public record Dashboard(
       LocalDate startDate,
@@ -46,44 +27,19 @@ public final class ReportDtos {
       String defaultCurrency,
       String granularity,
       List<CurrencyMetrics> currencies,
-      List<DailyTrend> dailyTrend,
       List<TrendPoint> salesTrend,
-      List<ProductRank> topProducts,
-      List<Breakdown> bySource,
-      List<Breakdown> byChannel,
-      List<Breakdown> byPaymentMethod,
-      List<Breakdown> byEvent,
-      long lowStockProducts,
-      long unallocatedTransactions,
-      long importErrors) {}
+      List<Breakdown> byEvent) {}
 
-  public record InventorySalesMetrics(
-      String currency,
-      long units,
-      long batches,
-      BigDecimal attributedAmount,
-      BigDecimal weightedAveragePrice,
-      BigDecimal minimumPrice,
-      BigDecimal maximumPrice) {}
+  public record InventorySalesMetrics(long units, long batches) {}
 
   public record InventorySalesGroup(
-      UUID productId,
-      String sku,
-      String label,
-      String currency,
-      long units,
-      long batches,
-      BigDecimal attributedAmount,
-      BigDecimal weightedAveragePrice,
-      BigDecimal minimumPrice,
-      BigDecimal maximumPrice) {}
+      UUID productId, String sku, String label, long units, long batches) {}
 
   public record InventorySalesReport(
       LocalDate startDate,
       LocalDate endDate,
       String timezone,
-      List<InventorySalesMetrics> currencies,
+      InventorySalesMetrics summary,
       List<InventorySalesGroup> byProduct,
-      List<InventorySalesGroup> byChannel,
       List<InventorySalesGroup> byEvent) {}
 }

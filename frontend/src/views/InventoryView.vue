@@ -14,12 +14,11 @@ import EmptyState from '@/components/EmptyState.vue'
 interface SaleLine {
   productId: string
   quantity: number
-  unitPrice: number
 }
 
 const { t, te } = useI18n()
 const { showError } = useApiFeedback()
-const { number, money, date, dateTime, defaultCurrency } = useFormatters()
+const { number, date, dateTime } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const saleOpen = ref(false)
@@ -31,15 +30,11 @@ const page = ref<PageResponse<InventoryMovement>>(normalizePage([]))
 const products = ref<Product[]>([])
 const events = ref<SalesEvent[]>([])
 const filterProductId = ref('')
-const filterChannel = ref('')
 const filterEventId = ref('')
 const addition = reactive({ productId: '', quantity: 1, remark: '' })
 const correction = reactive({ productId: '', quantity: 0, remark: '' })
 const sale = reactive({
-  salesChannel: 'EXHIBITION',
   eventId: '',
-  currency: 'EUR',
-  remark: '',
   items: [] as SaleLine[],
 })
 const activeEvents = computed(() => events.value.filter((event) => event.enabled))
@@ -50,12 +45,6 @@ const correctionDelta = computed(
 )
 const saleUnits = computed(() =>
   sale.items.reduce((sum, line) => sum + Number(line.quantity || 0), 0),
-)
-const saleAmount = computed(() =>
-  sale.items.reduce(
-    (sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0),
-    0,
-  ),
 )
 let productSearchTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -69,7 +58,6 @@ async function load() {
           page: currentPage.value - 1,
           size: pageSize.value,
           productId: filterProductId.value || undefined,
-          channel: filterChannel.value || undefined,
           eventId: filterEventId.value || undefined,
         },
       },
@@ -131,10 +119,6 @@ function movementLabel(type: string) {
     ? t(`inventory.movementTypes.${type}`)
     : type.replaceAll('_', ' ')
 }
-function channelLabel(channel?: string) {
-  const key = `orders.channels.${String(channel || '').toLowerCase()}`
-  return channel && te(key) ? t(key) : channel || '—'
-}
 function eventLabel(event: SalesEvent) {
   return `${event.name} · ${event.startDate} — ${event.endDate}`
 }
@@ -163,32 +147,17 @@ function selectCorrectionProduct() {
 }
 function openSale() {
   Object.assign(sale, {
-    salesChannel: 'EXHIBITION',
     eventId: '',
-    currency: defaultCurrency.value,
-    remark: '',
     items: [],
   })
   addSaleLine()
   saleOpen.value = true
 }
 function addSaleLine() {
-  if (sale.items.length < 100) sale.items.push({ productId: '', quantity: 1, unitPrice: 0 })
+  if (sale.items.length < 100) sale.items.push({ productId: '', quantity: 1 })
 }
 function removeSaleLine(index: number) {
   if (sale.items.length > 1) sale.items.splice(index, 1)
-}
-function selectSaleProduct(line: SaleLine) {
-  const product = productFor(line.productId)
-  if (product) line.unitPrice = Number(product.salePrice)
-}
-function changeSaleChannel() {
-  if (sale.salesChannel !== 'EXHIBITION') sale.eventId = ''
-}
-function changeFilterChannel() {
-  if (filterChannel.value !== 'EXHIBITION') filterEventId.value = ''
-  currentPage.value = 1
-  void load()
 }
 
 async function addStock() {
@@ -246,21 +215,16 @@ async function correctStock() {
 
 async function recordSale() {
   if (
-    !sale.salesChannel ||
-    (sale.salesChannel === 'EXHIBITION' && !sale.eventId) ||
+    !sale.eventId ||
     !sale.items.length ||
-    sale.items.some((line) => !line.productId || line.quantity <= 0 || line.unitPrice < 0)
+    sale.items.some((line) => !line.productId || line.quantity <= 0)
   ) {
     ElMessage.warning(t('errors.validation'))
     return
   }
   saving.value = true
   try {
-    await api.post('/inventory/sales', {
-      ...sale,
-      eventId: sale.eventId || null,
-      remark: sale.remark.trim() || null,
-    })
+    await api.post('/inventory/sales', sale)
     ElMessage.success(t('inventory.saleRecorded'))
     saleOpen.value = false
     await load()
@@ -324,16 +288,6 @@ onMounted(load)
           />
         </ElSelect>
         <ElSelect
-          v-model="filterChannel"
-          clearable
-          :placeholder="t('orders.channel')"
-          @change="changeFilterChannel"
-          ><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption
-            :label="t('orders.channels.online')"
-            value="ONLINE" /><ElOption :label="t('orders.channels.other')" value="OTHER"
-        /></ElSelect>
-        <ElSelect
-          v-if="filterChannel === 'EXHIBITION'"
           v-model="filterEventId"
           clearable
           filterable
@@ -380,29 +334,12 @@ onMounted(load)
         <ElTableColumn :label="t('inventory.stockAfter')" align="right" width="100"
           ><template #default="scope">{{ number(scope.row.stockAfter) }}</template></ElTableColumn
         >
-        <ElTableColumn :label="t('orders.channel')" min-width="120"
-          ><template #default="scope">{{
-            channelLabel(scope.row.salesChannel)
-          }}</template></ElTableColumn
-        >
         <ElTableColumn
           prop="eventName"
           :label="t('orders.event')"
           min-width="210"
           show-overflow-tooltip
         />
-        <ElTableColumn :label="t('inventory.actualPrice')" min-width="130" align="right"
-          ><template #default="scope">{{
-            scope.row.unitPrice == null ? '—' : money(scope.row.unitPrice, scope.row.currency)
-          }}</template></ElTableColumn
-        >
-        <ElTableColumn :label="t('inventory.attributedAmount')" min-width="150" align="right"
-          ><template #default="scope">{{
-            scope.row.attributedAmount == null
-              ? '—'
-              : money(scope.row.attributedAmount, scope.row.currency)
-          }}</template></ElTableColumn
-        >
         <ElTableColumn :label="t('inventory.attributedDate')" min-width="145"
           ><template #default="scope">{{
             scope.row.attributedDate ? date(scope.row.attributedDate) : '—'
@@ -545,17 +482,8 @@ onMounted(load)
       width="min(900px, 96vw)"
       destroy-on-close
     >
-      <ElAlert :title="t('inventory.attributionWarning')" type="info" show-icon :closable="false" />
       <ElForm label-position="top" class="form-grid inventory-sale-context">
-        <ElFormItem :label="t('orders.channel')" required
-          ><ElSelect v-model="sale.salesChannel" class="full-width" @change="changeSaleChannel"
-            ><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption
-              :label="t('orders.channels.online')"
-              value="ONLINE" /><ElOption
-              :label="t('orders.channels.other')"
-              value="OTHER" /></ElSelect
-        ></ElFormItem>
-        <ElFormItem v-if="sale.salesChannel === 'EXHIBITION'" :label="t('orders.event')" required
+        <ElFormItem :label="t('orders.event')" required
           ><ElSelect
             v-model="sale.eventId"
             filterable
@@ -567,12 +495,6 @@ onMounted(load)
               :label="eventLabel(event)"
               :value="event.id" /></ElSelect
         ></ElFormItem>
-        <ElFormItem :label="t('products.currency')" required
-          ><ElInput v-model="sale.currency" maxlength="3"
-        /></ElFormItem>
-        <ElFormItem :label="`${t('inventory.reason')} · ${t('common.optional')}`"
-          ><ElInput v-model="sale.remark"
-        /></ElFormItem>
       </ElForm>
       <div v-if="selectedEvent" class="sale-attribution-date">
         <span>{{ t('inventory.attributedDate') }}</span
@@ -583,12 +505,7 @@ onMounted(load)
         <div class="order-editor__heading">
           <span
             ><strong>{{ t('inventory.soldProducts') }}</strong
-            ><small>{{
-              t('inventory.saleSummary', {
-                count: saleUnits,
-                amount: money(saleAmount, sale.currency),
-              })
-            }}</small></span
+            ><small>{{ t('common.items', { count: saleUnits }) }}</small></span
           ><ElButton text :icon="Plus" :disabled="sale.items.length >= 100" @click="addSaleLine">{{
             t('orders.addItem')
           }}</ElButton>
@@ -601,7 +518,6 @@ onMounted(load)
             reserve-keyword
             :remote-method="searchProducts"
             :placeholder="t('inventory.selectProduct')"
-            @change="selectSaleProduct(line)"
             ><ElOption
               v-for="product in products"
               :key="product.id"
@@ -619,13 +535,6 @@ onMounted(load)
             :precision="0"
             controls-position="right"
           />
-          <ElInputNumber
-            v-model="line.unitPrice"
-            :min="0"
-            :precision="2"
-            controls-position="right"
-          />
-          <strong>{{ money(line.quantity * line.unitPrice, sale.currency) }}</strong>
           <ElButton
             text
             type="danger"

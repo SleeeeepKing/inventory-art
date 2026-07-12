@@ -1,5 +1,6 @@
 package com.inventoryart.event;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +13,8 @@ public interface SalesEventRepository extends JpaRepository<SalesEvent, UUID> {
 
   List<SalesEvent> findAllByTenantIdOrderByNameAsc(UUID tenantId);
 
+  List<SalesEvent> findAllByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids);
+
   Optional<SalesEvent> findByIdAndTenantId(UUID id, UUID tenantId);
 
   Optional<SalesEvent> findByIdAndTenantIdAndEnabledTrue(UUID id, UUID tenantId);
@@ -23,8 +26,6 @@ public interface SalesEventRepository extends JpaRepository<SalesEvent, UUID> {
           """
         select exists (
             select 1 from orders where tenant_id=:tenantId and event_id=:eventId
-            union all
-            select 1 from import_batches where tenant_id=:tenantId and event_id=:eventId
             union all
             select 1 from inventory_sale_batches where tenant_id=:tenantId and event_id=:eventId
         )

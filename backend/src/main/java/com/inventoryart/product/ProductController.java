@@ -104,8 +104,6 @@ public class ProductController {
           p.getId(),
           req.initialStock(),
           MovementType.INITIAL,
-          null,
-          null,
           "Initial stock",
           null,
           current.userId());
@@ -222,8 +220,7 @@ public class ProductController {
       int lowStockThreshold,
       boolean enabled,
       long totalUnitsSold,
-      BigDecimal totalSalesRevenue,
-      Instant lastSaleAt,
+      java.time.LocalDate lastSaleDate,
       long version,
       Instant createdAt,
       Instant updatedAt) {
@@ -252,8 +249,7 @@ public class ProductController {
           p.getLowStockThreshold(),
           p.isEnabled(),
           summary.unitsSold(),
-          summary.revenue(),
-          summary.lastSaleAt(),
+          summary.lastSaleDate(),
           p.getVersion(),
           p.getCreatedAt(),
           p.getUpdatedAt());

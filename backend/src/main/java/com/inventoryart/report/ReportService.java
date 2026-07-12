@@ -1,10 +1,12 @@
 package com.inventoryart.report;
 
 import com.inventoryart.exception.BusinessException;
+import com.inventoryart.exception.NotFoundException;
 import com.inventoryart.security.CurrentUser;
 import com.inventoryart.security.CurrentUserService;
 import com.inventoryart.user.UserRole;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
@@ -62,14 +64,7 @@ public class ReportService {
     TenantSettings settings = settings(tenantId, admin);
     LocalDate end = requestedEnd == null ? LocalDate.now(settings.zone()) : requestedEnd;
     LocalDate start = requestedStart == null ? end.minusDays(29) : requestedStart;
-    if (end.isBefore(start) || start.plusYears(2).isBefore(end)) {
-      throw new BusinessException(
-          "INVALID_REPORT_RANGE", "Report date range must be ordered and no longer than two years");
-    }
-    if (granularity == ReportGranularity.HOUR && start.plusDays(30).isBefore(end)) {
-      throw new BusinessException(
-          "HOURLY_REPORT_RANGE_TOO_LARGE", "Hourly reports are limited to 31 days");
-    }
+    validateRange(start, end, granularity);
     Instant from = start.atStartOfDay(settings.zone()).toInstant();
     Instant to = end.plusDays(1).atStartOfDay(settings.zone()).toInstant();
     MapSqlParameterSource params =
@@ -82,117 +77,61 @@ public class ReportService {
 
     List<ReportDtos.CurrencyMetrics> metrics =
         jdbc.query(
-            ReportSourcePolicy.INCLUDED_SALES_CTE
-                + """
-            select currency, coalesce(sum(gross_amount),0) gross, coalesce(sum(discount_amount),0) discounts,
-                   coalesce(sum(refund_amount),0) refunds, coalesce(sum(net_amount),0) net,
-                   coalesce(sum(fee_amount),0) fees, coalesce(sum(net_amount-fee_amount),0) after_fees,
-                   coalesce(sum(cost_amount),0) product_cost,
-                   coalesce(sum(net_amount-cost_amount),0) gross_profit,
-                   coalesce(sum(unit_count),0) units,
-                   coalesce(sum(order_count),0) orders, coalesce(sum(payment_count),0) payments
-            from included_sales group by currency order by currency
-            """,
-            params,
-            (rs, row) -> {
-              BigDecimal net = rs.getBigDecimal("net");
-              long orders = rs.getLong("orders");
-              return new ReportDtos.CurrencyMetrics(
-                  rs.getString("currency"),
-                  rs.getBigDecimal("gross"),
-                  rs.getBigDecimal("discounts"),
-                  rs.getBigDecimal("refunds"),
-                  net,
-                  rs.getBigDecimal("fees"),
-                  rs.getBigDecimal("after_fees"),
-                  rs.getBigDecimal("product_cost"),
-                  rs.getBigDecimal("gross_profit"),
-                  rs.getLong("units"),
-                  orders,
-                  rs.getLong("payments"),
-                  orders == 0
-                      ? BigDecimal.ZERO
-                      : net.divide(BigDecimal.valueOf(orders), 4, java.math.RoundingMode.HALF_UP));
-            });
-    List<ReportDtos.DailyTrend> trends =
-        jdbc.query(
-            ReportSourcePolicy.INCLUDED_SALES_CTE
-                + """
-            select (occurred_at at time zone :timezone)::date report_day, currency,
-                   sum(net_amount) net, sum(fee_amount) fees, sum(order_count) orders
-            from included_sales group by 1, currency order by 1, currency
-            """,
+            """
+              select currency, coalesce(sum(total_amount),0) total_sales,
+                     count(*) transaction_count, coalesce(avg(total_amount),0) average_value
+                from orders
+               where (:tenantId is null or tenant_id=cast(:tenantId as uuid))
+                 and order_date>=:from and order_date<:to
+               group by currency order by currency
+              """,
             params,
             (rs, row) ->
-                new ReportDtos.DailyTrend(
-                    rs.getDate("report_day").toLocalDate(),
+                new ReportDtos.CurrencyMetrics(
                     rs.getString("currency"),
-                    rs.getBigDecimal("net"),
-                    rs.getBigDecimal("fees"),
-                    rs.getLong("orders")));
-    List<ReportDtos.TrendPoint> salesTrend =
+                    money(rs.getBigDecimal("total_sales")),
+                    rs.getLong("transaction_count"),
+                    money(rs.getBigDecimal("average_value"))));
+
+    List<ReportDtos.TrendPoint> trends =
         jdbc.query(
-            ReportSourcePolicy.INCLUDED_SALES_CTE
-                + """
-            select case when :granularity='HOUR'
-                        then to_char(date_trunc('hour', occurred_at at time zone :timezone), 'YYYY-MM-DD"T"HH24:MI:SS')
-                        else to_char((occurred_at at time zone :timezone)::date, 'YYYY-MM-DD')
-                   end report_bucket,
-                   currency, sum(net_amount) net, sum(fee_amount) fees, sum(order_count) orders
-            from included_sales group by 1, currency order by 1, currency
-            """,
+            """
+              select case when :granularity='HOUR'
+                          then to_char(date_trunc('hour', order_date at time zone :timezone), 'YYYY-MM-DD"T"HH24:MI:SS')
+                          else to_char((order_date at time zone :timezone)::date, 'YYYY-MM-DD')
+                     end report_bucket,
+                     currency, sum(total_amount) total_sales, count(*) transactions
+                from orders
+               where (:tenantId is null or tenant_id=cast(:tenantId as uuid))
+                 and order_date>=:from and order_date<:to
+               group by 1,currency order by 1,currency
+              """,
             params,
             (rs, row) ->
                 new ReportDtos.TrendPoint(
                     rs.getString("report_bucket"),
                     rs.getString("currency"),
-                    rs.getBigDecimal("net"),
-                    rs.getBigDecimal("fees"),
-                    rs.getLong("orders")));
+                    money(rs.getBigDecimal("total_sales")),
+                    rs.getLong("transactions")));
 
-    List<ReportDtos.ProductRank> topProducts =
+    List<ReportDtos.Breakdown> byEvent =
         jdbc.query(
             """
-            with product_sales as (
-              select p.id, p.sku, p.name, o.currency,
-                     coalesce(sum(oi.quantity - oi.refunded_quantity),0)::bigint quantity,
-                     coalesce(sum(oi.line_total * (oi.quantity - oi.refunded_quantity) / oi.quantity),0) revenue
-                from order_items oi
-                join orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id
-                join products p on p.tenant_id=oi.tenant_id and p.id=oi.product_id
+              select e.name label,o.currency,sum(o.total_amount) total_sales,count(*) transactions
+                from orders o
+                join sales_events e on e.tenant_id=o.tenant_id and e.id=o.event_id
                where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid))
                  and o.order_date>=:from and o.order_date<:to
-                 and upper(o.currency)=upper(p.currency)
-                 and o.status in ('CONFIRMED','COMPLETED','PARTIALLY_REFUNDED','REFUNDED')
-               group by p.id,p.sku,p.name,o.currency
-            ), ranked as (
-              select *, row_number() over (partition by currency order by quantity desc, revenue desc, name) rank
-                from product_sales
-            )
-            select id,sku,name,currency,quantity,revenue from ranked where rank<=10 order by currency,rank
-            """,
+               group by e.name,o.currency order by total_sales desc,e.name
+              """,
             params,
             (rs, row) ->
-                new ReportDtos.ProductRank(
-                    rs.getObject("id", UUID.class),
-                    rs.getString("sku"),
-                    rs.getString("name"),
+                new ReportDtos.Breakdown(
+                    rs.getString("label"),
                     rs.getString("currency"),
-                    rs.getLong("quantity"),
-                    rs.getBigDecimal("revenue")));
+                    money(rs.getBigDecimal("total_sales")),
+                    rs.getLong("transactions")));
 
-    long lowStock =
-        scalar(
-            "select count(*) from products where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and enabled=true and current_stock<=low_stock_threshold",
-            params);
-    long unallocated =
-        scalar(
-            "select count(*) from orders where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and allocation_status<>'FULLY_ALLOCATED' and status<>'CANCELLED'",
-            params);
-    long importErrors =
-        scalar(
-            "select coalesce(sum(error_rows),0) from import_batches where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and status<>'REVERSED'",
-            params);
     return new ReportDtos.Dashboard(
         start,
         end,
@@ -201,43 +140,25 @@ public class ReportService {
         granularity.name(),
         metrics,
         trends,
-        salesTrend,
-        topProducts,
-        breakdown("source", params),
-        breakdown("sales_channel", params),
-        breakdown("payment_method", params),
-        breakdown("event_name", params),
-        lowStock,
-        unallocated,
-        importErrors);
+        byEvent);
   }
 
-  private List<ReportDtos.Breakdown> breakdown(String field, MapSqlParameterSource params) {
-    return jdbc.query(
-        ReportSourcePolicy.INCLUDED_SALES_CTE
-            + " select "
-            + field
-            + " label,currency,sum(net_amount) net,sum(order_count) orders from included_sales group by "
-            + field
-            + ",currency order by net desc",
-        params,
-        (rs, row) ->
-            new ReportDtos.Breakdown(
-                rs.getString("label"),
-                rs.getString("currency"),
-                rs.getBigDecimal("net"),
-                rs.getLong("orders")));
-  }
-
-  private long scalar(String sql, MapSqlParameterSource params) {
-    Long value = jdbc.queryForObject(sql, params, Long.class);
-    return value == null ? 0 : value;
+  private void validateRange(LocalDate start, LocalDate end, ReportGranularity granularity) {
+    if (end.isBefore(start) || start.plusYears(2).isBefore(end)) {
+      throw new BusinessException(
+          "INVALID_REPORT_RANGE", "Report date range must be ordered and no longer than two years");
+    }
+    if (granularity == ReportGranularity.HOUR && start.plusDays(30).isBefore(end)) {
+      throw new BusinessException(
+          "HOURLY_REPORT_RANGE_TOO_LARGE", "Hourly reports are limited to 31 days");
+    }
   }
 
   private TenantSettings settings(UUID tenantId, boolean admin) {
     if (tenantId == null) {
-      if (!admin)
+      if (!admin) {
         throw new BusinessException("TENANT_REQUIRED", "Tenant is required", HttpStatus.FORBIDDEN);
+      }
       return new TenantSettings(ZoneId.of("UTC"), "MULTI");
     }
     List<TenantSettings> result =
@@ -247,8 +168,14 @@ public class ReportService {
             (rs, row) ->
                 new TenantSettings(
                     ZoneId.of(rs.getString("timezone")), rs.getString("default_currency")));
-    if (result.isEmpty()) throw new com.inventoryart.exception.NotFoundException("Tenant");
+    if (result.isEmpty()) {
+      throw new NotFoundException("Tenant");
+    }
     return result.getFirst();
+  }
+
+  private static BigDecimal money(BigDecimal value) {
+    return value == null ? BigDecimal.ZERO.setScale(4) : value.setScale(4, RoundingMode.HALF_UP);
   }
 
   private record TenantSettings(ZoneId zone, String currency) {}

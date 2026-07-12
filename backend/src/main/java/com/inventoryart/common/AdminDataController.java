@@ -3,7 +3,6 @@ package com.inventoryart.common;
 import com.inventoryart.audit.AuditService;
 import com.inventoryart.event.SalesEventRepository;
 import com.inventoryart.inventory.MovementType;
-import com.inventoryart.order.*;
 import com.inventoryart.product.Product;
 import com.inventoryart.product.ProductController;
 import com.inventoryart.product.ProductRepository;
@@ -65,20 +64,18 @@ public class AdminDataController {
           Instant from,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant to,
-      @RequestParam(required = false) SalesChannel channel,
       @RequestParam(required = false) UUID eventId,
-      @RequestParam(required = false) String status,
       @RequestParam(required = false) String q,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    var result = data.orders(tenantId, userId, from, to, channel, eventId, status, q, page, size);
+    var result = data.orders(tenantId, userId, from, to, eventId, q, page, size);
     audit.record(
         tenantId,
         "ADMIN_ORDER_LIST",
         "ORDER",
         null,
         "SUCCESS",
-        metadata(page, userId, channel, eventId, from, to));
+        metadata(page, userId, eventId, from, to));
     return result;
   }
 
@@ -92,19 +89,17 @@ public class AdminDataController {
           Instant to,
       @RequestParam(required = false) MovementType type,
       @RequestParam(required = false) UUID productId,
-      @RequestParam(required = false) SalesChannel channel,
       @RequestParam(required = false) UUID eventId,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    var result =
-        data.inventory(tenantId, userId, from, to, type, productId, channel, eventId, page, size);
+    var result = data.inventory(tenantId, userId, from, to, type, productId, eventId, page, size);
     audit.record(
         tenantId,
         "ADMIN_INVENTORY_LIST",
         "INVENTORY_MOVEMENT",
         null,
         "SUCCESS",
-        metadata(page, userId, channel, eventId, from, to));
+        metadata(page, userId, eventId, from, to));
     return result;
   }
 
@@ -123,11 +118,10 @@ public class AdminDataController {
   }
 
   private Map<String, Object> metadata(
-      int page, UUID userId, SalesChannel channel, UUID eventId, Instant from, Instant to) {
+      int page, UUID userId, UUID eventId, Instant from, Instant to) {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("page", page);
     if (userId != null) result.put("userId", userId);
-    if (channel != null) result.put("channel", channel.name());
     if (eventId != null) result.put("eventId", eventId);
     if (from != null) result.put("from", from.toString());
     if (to != null) result.put("to", to.toString());

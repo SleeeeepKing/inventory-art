@@ -62,8 +62,7 @@ export interface Product {
   category?: string
   artistName?: string
   totalUnitsSold?: number
-  totalSalesRevenue?: number
-  lastSaleAt?: string
+  lastSaleDate?: string
   version?: number
   createdAt?: string
   updatedAt?: string
@@ -78,85 +77,38 @@ export interface InventoryMovement {
   quantity: number
   stockBefore?: number
   stockAfter?: number
-  reason?: string
+  reference?: string
   remark?: string
-  referenceType?: string
-  referenceId?: string
   createdAt: string
-  createdByName?: string
   operatorId?: string
   saleBatchId?: string
-  salesChannel?: string
   eventId?: string
   eventName?: string
   attributedDate?: string
-  unitPrice?: number
-  currency?: string
-  attributedAmount?: number
-}
-
-export interface OrderItem {
-  id?: string
-  productId: string
-  productName?: string
-  sku?: string
-  quantity: number
-  unitPrice: number
-  lineTotal?: number
-  refundedQuantity?: number
 }
 
 export interface Order {
   id: string
   orderNumber: string
-  status:
-    | 'DRAFT'
-    | 'CONFIRMED'
-    | 'COMPLETED'
-    | 'CANCELLED'
-    | 'REFUNDED'
-    | 'PARTIALLY_REFUNDED'
-    | 'UNALLOCATED'
-  source?: string
-  channel?: string
-  salesChannel?: string
-  eventId?: string
-  eventName?: string
+  eventId: string
+  eventName: string
   currency: string
-  subtotal: number
-  taxAmount?: number
-  refundAmount?: number
   totalAmount: number
-  notes?: string
-  customerNote?: string
-  items: OrderItem[]
-  orderedAt?: string
   orderDate: string
-  paymentMethod?: string
-  paymentStatus?: string
   createdBy?: string
   createdAt?: string
-}
-
-export interface OrderBatchFailure {
-  id: string
-  orderNumber?: string
-  code: string
-  message: string
-}
-
-export interface OrderBatchResponse {
-  succeeded: Array<{ id: string; orderNumber: string; status: string }>
-  failed: OrderBatchFailure[]
+  updatedAt?: string
+  version?: number
 }
 
 export interface OrderBatchCreateResponse {
   eventId: string
   eventName: string
   currency: string
+  orderDate: string
   orderCount: number
   totalAmount: number
-  orders: Array<{ id: string; orderNumber: string; status: string }>
+  orders: Array<{ id: string; orderNumber: string }>
 }
 
 export interface SalesEvent {
@@ -169,61 +121,13 @@ export interface SalesEvent {
   updatedAt: string
 }
 
-export interface ImportBatch {
-  id: string
-  fileName?: string
-  originalFilename: string
-  status:
-    | 'UPLOADED'
-    | 'ANALYZING'
-    | 'READY_FOR_MAPPING'
-    | 'READY_FOR_CONFIRMATION'
-    | 'IMPORTING'
-    | 'COMPLETED'
-    | 'COMPLETED_WITH_ERRORS'
-    | 'FAILED'
-    | 'REVERSED'
-  fileType?: string
-  detectedType?: string
-  importType?: string
-  totalRows?: number
-  validRows?: number
-  importedRows?: number
-  updatedRows?: number
-  duplicateRows?: number
-  skippedRows?: number
-  errorRows?: number
-  analysisVersion?: number
-  createdAt: string
-  completedAt?: string
-  orderCount?: number
-  inventoryMovementCount?: number
-  eventId?: string
-  eventName?: string
-}
-
 export interface ReportSummary {
   currency: string
   revenue: number
-  grossSales: number
-  discounts: number
-  refunds: number
-  fees: number
-  afterFees: number
-  productCost: number
   orders: number
-  unitsSold: number
-  grossProfit: number
   averageOrderValue: number
-  successfulPayments: number
-  pendingAllocation: number
-  importErrors: number
   lowStockProducts: number
   dailySales: Array<{ date: string; revenue: number; orders: number }>
-  topProducts: Array<{ name: string; sku?: string; quantity: number; revenue: number }>
-  sources?: Array<{ name: string; value: number }>
-  channels?: Array<{ name: string; value: number }>
-  paymentMethods?: Array<{ name: string; value: number }>
   events?: Array<{ name: string; value: number }>
 }
 

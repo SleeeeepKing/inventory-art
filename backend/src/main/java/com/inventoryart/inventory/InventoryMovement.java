@@ -1,7 +1,11 @@
 package com.inventoryart.inventory;
 
-import jakarta.persistence.*;
-import java.math.BigDecimal;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -29,17 +33,8 @@ public class InventoryMovement {
   @Column(name = "stock_after", nullable = false)
   private int stockAfter;
 
-  @Column(name = "related_order_id")
-  private UUID relatedOrderId;
-
-  @Column(name = "related_import_batch_id")
-  private UUID relatedImportBatchId;
-
   @Column(name = "sale_batch_id")
   private UUID saleBatchId;
-
-  @Column(name = "unit_price")
-  private BigDecimal unitPrice;
 
   private String reference;
   private String remark;
@@ -59,38 +54,7 @@ public class InventoryMovement {
       int quantity,
       int before,
       int after,
-      UUID orderId,
-      UUID batchId,
-      String reference,
-      String remark,
-      UUID operatorId) {
-    this(
-        tenantId,
-        productId,
-        type,
-        quantity,
-        before,
-        after,
-        orderId,
-        batchId,
-        null,
-        null,
-        reference,
-        remark,
-        operatorId);
-  }
-
-  public InventoryMovement(
-      UUID tenantId,
-      UUID productId,
-      MovementType type,
-      int quantity,
-      int before,
-      int after,
-      UUID orderId,
-      UUID importBatchId,
       UUID saleBatchId,
-      BigDecimal unitPrice,
       String reference,
       String remark,
       UUID operatorId) {
@@ -101,10 +65,7 @@ public class InventoryMovement {
     this.quantity = quantity;
     this.stockBefore = before;
     this.stockAfter = after;
-    this.relatedOrderId = orderId;
-    this.relatedImportBatchId = importBatchId;
     this.saleBatchId = saleBatchId;
-    this.unitPrice = unitPrice;
     this.reference = reference;
     this.remark = remark;
     this.operatorId = operatorId;
@@ -139,20 +100,8 @@ public class InventoryMovement {
     return stockAfter;
   }
 
-  public UUID getRelatedOrderId() {
-    return relatedOrderId;
-  }
-
-  public UUID getRelatedImportBatchId() {
-    return relatedImportBatchId;
-  }
-
   public UUID getSaleBatchId() {
     return saleBatchId;
-  }
-
-  public BigDecimal getUnitPrice() {
-    return unitPrice;
   }
 
   public String getReference() {

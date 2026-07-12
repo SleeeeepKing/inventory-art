@@ -1,10 +1,7 @@
 package com.inventoryart.inventory;
 
-import com.inventoryart.order.SalesChannel;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -19,23 +16,11 @@ public class InventorySaleBatch {
   @Column(name = "tenant_id", nullable = false)
   private UUID tenantId;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "sales_channel", nullable = false)
-  private SalesChannel salesChannel;
-
-  @Column(name = "event_id")
+  @Column(name = "event_id", nullable = false)
   private UUID eventId;
-
-  @Column(name = "event_name")
-  private String eventName;
-
-  @Column(nullable = false, length = 3)
-  private String currency;
 
   @Column(name = "attributed_date", nullable = false)
   private LocalDate attributedDate;
-
-  private String remark;
 
   @Column(name = "operator_id")
   private UUID operatorId;
@@ -46,22 +31,11 @@ public class InventorySaleBatch {
   protected InventorySaleBatch() {}
 
   public InventorySaleBatch(
-      UUID tenantId,
-      SalesChannel salesChannel,
-      UUID eventId,
-      String eventName,
-      String currency,
-      LocalDate attributedDate,
-      String remark,
-      UUID operatorId) {
+      UUID tenantId, UUID eventId, LocalDate attributedDate, UUID operatorId) {
     this.id = UUID.randomUUID();
     this.tenantId = tenantId;
-    this.salesChannel = salesChannel;
     this.eventId = eventId;
-    this.eventName = eventName;
-    this.currency = currency;
     this.attributedDate = attributedDate;
-    this.remark = remark;
     this.operatorId = operatorId;
     this.createdAt = Instant.now();
   }
@@ -74,28 +48,12 @@ public class InventorySaleBatch {
     return tenantId;
   }
 
-  public SalesChannel getSalesChannel() {
-    return salesChannel;
-  }
-
   public UUID getEventId() {
     return eventId;
   }
 
-  public String getEventName() {
-    return eventName;
-  }
-
-  public String getCurrency() {
-    return currency;
-  }
-
   public LocalDate getAttributedDate() {
     return attributedDate;
-  }
-
-  public String getRemark() {
-    return remark;
   }
 
   public UUID getOperatorId() {

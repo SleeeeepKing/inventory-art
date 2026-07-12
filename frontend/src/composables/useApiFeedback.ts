@@ -9,7 +9,6 @@ const errorKeys: Record<string, string> = {
   VALIDATION_ERROR: 'errors.validation',
   INVALID_REQUEST: 'errors.invalidRequest',
   DATA_CONFLICT: 'errors.conflict',
-  FILE_TOO_LARGE: 'errors.fileTooLarge',
   RESOURCE_NOT_FOUND: 'errors.resourceNotFound',
   INVALID_PASSWORD: 'errors.invalidPassword',
   DUPLICATE_USER: 'errors.duplicateUser',
@@ -20,17 +19,10 @@ const errorKeys: Record<string, string> = {
   SALES_EVENT_IN_USE: 'errors.salesEventInUse',
   INSUFFICIENT_STOCK: 'errors.insufficientStock',
   STOCK_UNCHANGED: 'inventory.stockUnchanged',
-  CURRENCY_MISMATCH: 'errors.currencyMismatch',
-  ORDER_ALREADY_CONFIRMED: 'errors.orderAlreadyConfirmed',
-  ORDER_ITEMS_REQUIRED: 'errors.orderItemsRequired',
-  ORDER_ALREADY_CANCELLED: 'errors.orderAlreadyCancelled',
-  ORDER_CANNOT_BE_CANCELLED: 'errors.orderCannotBeCancelled',
-  ORDER_NOT_EDITABLE: 'errors.orderNotEditable',
-  INVALID_DISCOUNT: 'errors.invalidDiscount',
+  ORDER_OUTSIDE_EVENT: 'errors.orderOutsideEvent',
   INVALID_LOCALE: 'errors.invalidLocale',
   UNSUPPORTED_LOCALE: 'errors.invalidLocale',
   OPTIMISTIC_LOCK_CONFLICT: 'errors.conflict',
-  DUPLICATE_IMPORT_FILE: 'import.duplicate',
 }
 
 export function useApiFeedback() {

@@ -23,10 +23,6 @@ spring:
         order_updates: true
   flyway:
     enabled: true
-  servlet:
-    multipart:
-      max-file-size: ${IMPORT_MAX_FILE_SIZE:20MB}
-      max-request-size: ${IMPORT_MAX_FILE_SIZE:20MB}
   jackson:
     default-property-inclusion: non_null
 management:
@@ -60,11 +56,6 @@ app:
     secret-key: ${R2_SECRET_ACCESS_KEY:}
     bucket: ${R2_BUCKET_PRIVATE:inventory-art}
     presigned-expiration-seconds: ${R2_PRESIGNED_URL_EXPIRATION_SECONDS:900}
-  import-config:
-    max-file-size: ${IMPORT_MAX_BYTES:20971520}
-    legacy-spreadsheet-max-file-size: ${IMPORT_XLS_MAX_BYTES:5242880}
-    batch-size: ${IMPORT_BATCH_SIZE:200}
-    max-rows: ${IMPORT_MAX_ROWS:20000}
   seed:
     enabled: ${APP_SEED_ENABLED:false}
 logging:
