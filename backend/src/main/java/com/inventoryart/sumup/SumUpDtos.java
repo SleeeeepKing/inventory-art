@@ -16,6 +16,7 @@ public final class SumUpDtos {
 
     public record BatchResponse(
         UUID id, UUID tenantId, String sourceProvider, ImportType importType, String originalFilename, long fileSize,
+        UUID eventId, String eventName,
         String detectedEncoding, String detectedDelimiter, int analysisVersion, ImportBatchStatus status,
         int totalRows, int validRows, int importedRows, int updatedRows, int duplicateRows, int skippedRows,
         int errorRows, int inventoryMovementCount, int orderCount, Instant createdAt, Instant startedAt,
@@ -23,7 +24,7 @@ public final class SumUpDtos {
     ) {
         static BatchResponse from(ImportBatch batch) {
             return new BatchResponse(batch.getId(), batch.getTenantId(), batch.getSourceProvider(), batch.getImportType(),
-                batch.getOriginalFilename(), batch.getFileSize(), batch.getDetectedEncoding(),
+                batch.getOriginalFilename(), batch.getFileSize(), batch.getEventId(), batch.getEventName(), batch.getDetectedEncoding(),
                 batch.getDetectedDelimiter(), batch.getAnalysisVersion(), batch.getStatus(), batch.getTotalRows(),
                 batch.getValidRows(), batch.getImportedRows(), batch.getUpdatedRows(), batch.getDuplicateRows(),
                 batch.getSkippedRows(), batch.getErrorRows(), batch.getInventoryMovementCount(), batch.getOrderCount(),
@@ -59,6 +60,7 @@ public final class SumUpDtos {
                                          @NotEmpty List<@Valid ProductMappingItem> mappings) {}
 
     public record ConfirmRequest(@Min(0) int expectedAnalysisVersion) {}
+    public record EventRequest(@NotNull UUID eventId) {}
 
     public record ImportActionResponse(UUID batchId, ImportBatchStatus status, int importedRows,
                                        int updatedRows, int duplicateRows, int errorRows,

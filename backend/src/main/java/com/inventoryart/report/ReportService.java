@@ -32,32 +32,42 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
-    public ReportDtos.Dashboard tenantDashboard(LocalDate start, LocalDate end) {
-        return dashboard(currentUser.tenantId(), start, end, false);
+    public ReportDtos.Dashboard tenantDashboard(LocalDate start, LocalDate end, ReportGranularity granularity) {
+        return dashboard(currentUser.tenantId(), start, end, granularity, false);
     }
 
     @Transactional(readOnly = true)
-    public ReportDtos.Dashboard adminDashboard(UUID tenantId, LocalDate start, LocalDate end) {
+    public ReportDtos.Dashboard adminDashboard(UUID tenantId, LocalDate start, LocalDate end, ReportGranularity granularity) {
         CurrentUser user = currentUser.get();
         if (user.role() != UserRole.ADMIN) {
             throw new BusinessException("FORBIDDEN", "Administrator access required", HttpStatus.FORBIDDEN);
         }
-        return dashboard(tenantId, start, end, true);
+        if (granularity == ReportGranularity.HOUR && tenantId == null) {
+            throw new BusinessException("TENANT_REQUIRED_FOR_HOURLY_REPORT",
+                "Select one tenant before using hourly report granularity");
+        }
+        return dashboard(tenantId, start, end, granularity, true);
     }
 
-    private ReportDtos.Dashboard dashboard(UUID tenantId, LocalDate requestedStart, LocalDate requestedEnd, boolean admin) {
+    private ReportDtos.Dashboard dashboard(UUID tenantId, LocalDate requestedStart, LocalDate requestedEnd,
+                                           ReportGranularity requestedGranularity, boolean admin) {
+        ReportGranularity granularity = requestedGranularity == null ? ReportGranularity.DAY : requestedGranularity;
         TenantSettings settings = settings(tenantId, admin);
         LocalDate end = requestedEnd == null ? LocalDate.now(settings.zone()) : requestedEnd;
         LocalDate start = requestedStart == null ? end.minusDays(29) : requestedStart;
         if (end.isBefore(start) || start.plusYears(2).isBefore(end)) {
             throw new BusinessException("INVALID_REPORT_RANGE", "Report date range must be ordered and no longer than two years");
         }
+        if (granularity == ReportGranularity.HOUR && start.plusDays(30).isBefore(end)) {
+            throw new BusinessException("HOURLY_REPORT_RANGE_TOO_LARGE", "Hourly reports are limited to 31 days");
+        }
         Instant from = start.atStartOfDay(settings.zone()).toInstant();
         Instant to = end.plusDays(1).atStartOfDay(settings.zone()).toInstant();
         MapSqlParameterSource params = new MapSqlParameterSource()
             .addValue("tenantId", tenantId == null ? null : tenantId.toString(), Types.VARCHAR)
             .addValue("from", Timestamp.from(from)).addValue("to", Timestamp.from(to))
-            .addValue("timezone", settings.zone().getId());
+            .addValue("timezone", settings.zone().getId())
+            .addValue("granularity", granularity.name());
 
         List<ReportDtos.CurrencyMetrics> metrics = jdbc.query(ReportSourcePolicy.INCLUDED_SALES_CTE + """
             select currency, coalesce(sum(gross_amount),0) gross, coalesce(sum(discount_amount),0) discounts,
@@ -82,6 +92,15 @@ public class ReportService {
                    sum(net_amount) net, sum(fee_amount) fees, sum(order_count) orders
             from included_sales group by 1, currency order by 1, currency
             """, params, (rs, row) -> new ReportDtos.DailyTrend(rs.getDate("report_day").toLocalDate(),
+            rs.getString("currency"), rs.getBigDecimal("net"), rs.getBigDecimal("fees"), rs.getLong("orders")));
+        List<ReportDtos.TrendPoint> salesTrend = jdbc.query(ReportSourcePolicy.INCLUDED_SALES_CTE + """
+            select case when :granularity='HOUR'
+                        then to_char(date_trunc('hour', occurred_at at time zone :timezone), 'YYYY-MM-DD"T"HH24:MI:SS')
+                        else to_char((occurred_at at time zone :timezone)::date, 'YYYY-MM-DD')
+                   end report_bucket,
+                   currency, sum(net_amount) net, sum(fee_amount) fees, sum(order_count) orders
+            from included_sales group by 1, currency order by 1, currency
+            """, params, (rs, row) -> new ReportDtos.TrendPoint(rs.getString("report_bucket"),
             rs.getString("currency"), rs.getBigDecimal("net"), rs.getBigDecimal("fees"), rs.getLong("orders")));
 
         List<ReportDtos.ProductRank> topProducts = jdbc.query("""
@@ -108,7 +127,7 @@ public class ReportService {
         long lowStock = scalar("select count(*) from products where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and enabled=true and current_stock<=low_stock_threshold", params);
         long unallocated = scalar("select count(*) from orders where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and allocation_status<>'FULLY_ALLOCATED' and status<>'CANCELLED'", params);
         long importErrors = scalar("select coalesce(sum(error_rows),0) from import_batches where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and status<>'REVERSED'", params);
-        return new ReportDtos.Dashboard(start, end, settings.zone().getId(), settings.currency(), metrics, trends,
+        return new ReportDtos.Dashboard(start, end, settings.zone().getId(), settings.currency(), granularity.name(), metrics, trends, salesTrend,
             topProducts, breakdown("source", params), breakdown("sales_channel", params),
             breakdown("payment_method", params), breakdown("event_name", params), lowStock, unallocated, importErrors);
     }

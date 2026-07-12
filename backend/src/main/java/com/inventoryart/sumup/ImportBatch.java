@@ -34,6 +34,8 @@ public class ImportBatch {
     @Column(name = "error_rows", nullable = false) private int errorRows;
     @Column(name = "inventory_movement_count", nullable = false) private int inventoryMovementCount;
     @Column(name = "order_count", nullable = false) private int orderCount;
+    @Column(name = "event_id") private UUID eventId;
+    @Column(name = "event_name") private String eventName;
     @Column(name = "created_by", nullable = false) private UUID createdBy;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "started_at") private Instant startedAt;
@@ -46,7 +48,7 @@ public class ImportBatch {
     void assignId(UUID id) { this.id = id; }
 
     static ImportBatch uploaded(UUID tenantId, ImportType importType, String filename, String key,
-                                String checksum, long size, UUID userId) {
+                                String checksum, long size, UUID eventId, String eventName, UUID userId) {
         ImportBatch batch = new ImportBatch();
         batch.id = UUID.randomUUID();
         batch.tenantId = tenantId;
@@ -56,6 +58,8 @@ public class ImportBatch {
         batch.storedObjectKey = key;
         batch.fileChecksum = checksum;
         batch.fileSize = size;
+        batch.eventId = eventId;
+        batch.eventName = eventName;
         batch.status = ImportBatchStatus.UPLOADED;
         batch.createdBy = userId;
         batch.createdAt = Instant.now();
@@ -91,6 +95,14 @@ public class ImportBatch {
     }
 
     void failed() { status = ImportBatchStatus.FAILED; }
+    void assignEvent(UUID eventId, String eventName) {
+        if (status == ImportBatchStatus.IMPORTING || status == ImportBatchStatus.COMPLETED
+            || status == ImportBatchStatus.COMPLETED_WITH_ERRORS || status == ImportBatchStatus.REVERSED) {
+            throw SumUpExceptions.invalidState(status, "change its sales event");
+        }
+        this.eventId = eventId;
+        this.eventName = eventName;
+    }
     void markImporting() { status = ImportBatchStatus.IMPORTING; startedAt = Instant.now(); }
     void markCompleted(SumUpImportCommitter.Result result) {
         importedRows = result.importedRows();
@@ -125,6 +137,8 @@ public class ImportBatch {
     public int getErrorRows() { return errorRows; }
     public int getInventoryMovementCount() { return inventoryMovementCount; }
     public int getOrderCount() { return orderCount; }
+    public UUID getEventId() { return eventId; }
+    public String getEventName() { return eventName; }
     public UUID getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getStartedAt() { return startedAt; }

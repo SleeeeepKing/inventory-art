@@ -43,9 +43,11 @@ final class ReportSourcePolicy {
                  (e.amount - coalesce(e.refund_amount, 0)) as net_amount,
                  0::numeric as cost_amount, 0::bigint as unit_count,
                  1::bigint as order_count, 1::bigint as payment_count,
-                 'SUMUP_IMPORT' as source, 'SUMUP' as sales_channel,
-                 coalesce(e.payment_method, 'SUMUP') as payment_method, '' as event_name
+                 'SUMUP_IMPORT' as source,
+                 case when b.event_id is not null then 'EXHIBITION' else 'OTHER' end as sales_channel,
+                 'SUMUP' as payment_method, coalesce(b.event_name, '') as event_name
           from external_transactions e
+          left join import_batches b on b.tenant_id=e.tenant_id and b.id=e.import_batch_id
           where (:tenantId is null or e.tenant_id = cast(:tenantId as uuid))
             and e.occurred_at >= :from and e.occurred_at < :to
             and e.active = true and e.provider = 'SUMUP'

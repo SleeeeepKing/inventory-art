@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -8,7 +8,7 @@ import { api } from '@/services/api'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
-import type { ImportBatch, PageResponse, Product } from '@/types/api'
+import type { ImportBatch, PageResponse, Product, SalesEvent } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusPill from '@/components/StatusPill.vue'
 
@@ -48,6 +48,8 @@ const preview = ref<ImportPreview>({ analysisVersion: 0 })
 const products = ref<Product[]>([])
 const columnMappings = ref<Record<string, string>>({})
 const productMatches = ref<ProductMatch[]>([])
+const events = ref<SalesEvent[]>([])
+const eventId = ref('')
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 
 const fieldOptions = computed(() => [
@@ -76,6 +78,14 @@ function assignFile(file?: File) {
 }
 function onDrop(event: DragEvent) { dragging.value = false; assignFile(event.dataTransfer?.files[0]) }
 function formatPreviewRow(row: Record<string, unknown>) { return JSON.stringify(row, null, 2) }
+function eventLabel(event: SalesEvent) { return `${event.name} · ${event.startDate} — ${event.endDate}` }
+
+async function fetchEvents() {
+  try {
+    const { data } = await api.get<SalesEvent[]>('/sales-events')
+    events.value = data
+  } catch (error) { showError(error) }
+}
 
 async function fetchProducts() {
   const { data } = await api.get<PageResponse<Product> | Product[]>('/products', { params: { page: 0, size: 100, enabled: true } })
@@ -119,12 +129,13 @@ async function pollBatch(terminal: string[], onReady: () => Promise<void>) {
 
 async function uploadAndAnalyze() {
   if (!selectedFile.value) { ElMessage.warning(t('import.noFile')); return }
+  if (!eventId.value) { ElMessage.warning(t('import.eventRequired')); return }
   busy.value = true
   uploadProgress.value = 0
   try {
     const body = new FormData()
     body.append('file', selectedFile.value)
-    const { data } = await api.post<ImportBatch>('/imports/sumup/upload', body, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (event) => { uploadProgress.value = event.total ? Math.round((event.loaded / event.total) * 100) : 0 } })
+    const { data } = await api.post<ImportBatch>('/imports/sumup/upload', body, { params: { eventId: eventId.value }, headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (event) => { uploadProgress.value = event.total ? Math.round((event.loaded / event.total) * 100) : 0 } })
     batch.value = data
     const { data: analysis } = await api.post<AnalyzeResponse>(`/imports/sumup/${data.id}/analyze`)
     batch.value = analysis.batch
@@ -187,6 +198,7 @@ async function downloadErrors() {
 }
 
 onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
+onMounted(fetchEvents)
 </script>
 
 <template>
@@ -198,6 +210,7 @@ onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
       </ElSteps>
 
       <div v-if="step === 0" class="wizard-stage upload-stage">
+        <ElForm label-position="top" class="import-event-context"><ElFormItem :label="t('import.salesEvent')" required><ElSelect v-model="eventId" filterable class="full-width" :placeholder="t('orders.selectEvent')"><ElOption v-for="event in events" :key="event.id" :label="eventLabel(event)" :value="event.id" /></ElSelect></ElFormItem></ElForm>
         <input ref="fileInput" class="visually-hidden" type="file" accept=".csv,.xls,.xlsx" @change="assignFile(($event.target as HTMLInputElement).files?.[0])" />
         <button class="file-drop" :class="{ 'is-dragging': dragging }" type="button" @click="chooseFile" @dragenter.prevent="dragging = true" @dragover.prevent @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
           <UploadFilled /><strong>{{ t('import.dropTitle') }}</strong><span>{{ t('import.dropBody') }}</span><em>{{ t('import.chooseFile') }}</em>
@@ -229,6 +242,7 @@ onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
 
       <div v-else-if="step === 3" class="wizard-stage">
         <div class="stage-heading"><h2>{{ t('import.impactTitle') }}</h2><p>{{ t('import.reviewWarning') }}</p></div>
+        <ElAlert :title="t('import.eventReview', { event: batch?.eventName || '—' })" type="info" show-icon :closable="false" />
         <div class="impact-grid"><div><span>{{ t('import.impactOrders') }}</span><strong>{{ number(impact.orders) }}</strong></div><div><span>{{ t('import.impactTransactions') }}</span><strong>{{ number(impact.transactions) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(impact.errors) }}</strong></div></div>
         <ElTable v-if="preview.sampleRows?.length" class="preview-table" :data="preview.sampleRows" max-height="360"><ElTableColumn type="index" width="58" :label="t('import.row')" /><ElTableColumn :label="t('import.normalizedPreview')"><template #default="scope"><pre class="preview-json">{{ formatPreviewRow(scope.row) }}</pre></template></ElTableColumn></ElTable>
         <ElAlert :title="t('import.reviewWarning')" type="warning" show-icon :closable="false" />

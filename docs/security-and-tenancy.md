@@ -30,6 +30,8 @@
 - ADMIN 只能通过 `/api/v1/admin/**` 及明确的管理员 Service 执行全局查询或修复，不能把普通 USER API 当作跨 Tenant 后门。
 - 管理员接口使用角色授权，并显式接收/解析目标 Tenant 过滤条件。
 - 每次跨 Tenant 读取、导出或修改写入 `audit_logs`：actor、目标 Tenant、动作、资源、结果、IP、User-Agent 和不含敏感信息的筛选摘要。
+- 订单按 `orders.created_by`、库存按 `inventory_movements.operator_id` 解释“系统用户”筛选；管理员列表使用轻量投影，不加载订单明细或逐行查询。
+- 未选择 Tenant 的订单/库存查询默认最近 30 天且最多 90 天，页大小上限 50；展会筛选必须先锁定 Tenant。
 - 管理员也不能绕过库存、订单、文件确认或导入幂等规则；修复应调用相同领域 Service。
 
 ### 数据库防线
@@ -94,7 +96,7 @@ Refresh 和 Logout 会自动携带 Cookie，因此服务端必须校验请求 `O
 ## 输入、错误和日志
 
 - Controller 使用 Bean Validation；ID、枚举、分页、日期范围、金额、文件名和上传大小都有边界。
-- 订单金额必须为正数，商品行只能引用当前 Tenant 的商品；订单接口没有库存写入能力。
+- 订单金额必须为正数，批量订单最多 100 笔；库存售出最多 100 个不重复商品并使用行锁，展会和商品都必须属于当前 Tenant。订单接口没有库存写入能力。
 - CSV/XLS/XLSX 采用 allowlist 和流式/事件式读取；拒绝 PDF、图片、可执行文件和宏文件。
 - 统一错误只返回稳定 code、用户可读 message 和 traceId；不返回 SQL、堆栈、内部类名或存储 Secret。
 - 日志过滤 `Authorization`、`Cookie`、密码、Refresh Token、R2 Secret、完整银行卡数据和上传原始行。

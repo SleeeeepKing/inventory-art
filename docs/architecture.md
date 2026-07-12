@@ -38,8 +38,8 @@ flowchart LR
 | `auth` / `security` | 登录、JWT、Refresh Token 轮换、认证上下文、角色授权、登录限流 |
 | `tenant` / `user` | Tenant、用户、个人设置、ADMIN 用户与 Tenant 管理 |
 | `product` | 商品 CRUD、SKU 约束、图片关联、销售聚合视图 |
-| `inventory` | 行锁/版本检查、库存变更、库存流水、批量调整和导出 |
-| `order` / `payment` | 金额必填、商品可选的订单状态机、支付、取消和退款 |
+| `inventory` | 行锁、最多 100 个商品的原子售出批次、实际售价、独立库存流水和导出 |
+| `order` / `payment` | 金额必填、商品可选的订单状态机、展会金额批量补录、支付、取消和退款 |
 | `sumup` | 文件上传、解析、映射、预览、幂等导入、外部交易和撤销 |
 | `report` | 集中的数据源纳入策略、KPI、趋势和分组聚合 |
 | `storage` | `StorageService` 以及 Local、MinIO、R2 实现，预签名和对象确认 |
@@ -85,12 +85,12 @@ Pinia 会话 Store 只在内存持有 Access Token。Axios 遇到可刷新认证
 flowchart LR
     OrdersUI["订单页面"] -->|"金额 + 可选商品数量"| OrderService
     OrderService -->|"只写销售记录"| OrdersDB[("orders / order_items")]
-    InventoryUI["库存页面"] -->|"独立增减 + 原因"| InventoryService
-    InventoryService -->|"行锁、校验、流水"| InventoryDB[("products.current_stock / inventory_movements")]
+    InventoryUI["库存页面"] -->|"售出批次 / 新增库存"| InventoryService
+    InventoryService -->|"行锁、校验、批次与流水"| InventoryDB[("inventory_sale_batches / products.current_stock / inventory_movements")]
     OrderService -. "无调用关系" .- InventoryService
 ```
 
-订单创建、确认、编辑、取消和退款都不会改变库存；商品明细只服务于销量和商品报表。无商品订单仍是完整销售记录，并可按剩余金额退款。库存操作必须由用户进入库存页面，选择商品、增减方向、数量和原因后独立提交。
+订单创建、批量补录、确认、编辑、取消和退款都不会改变库存。展会批量补录先选择展会和共同交易时间，再原子写入最多 100 笔金额；商品销量由库存售出批次独立记录。库存售出先锁定同批商品，任一库存不足时整批回滚；展会批次使用展会结束日作为分析归属日，备注可空。
 
 ### 文件存储
 
@@ -112,7 +112,7 @@ UPLOADED → ANALYZING → READY_FOR_MAPPING → READY_FOR_CONFIRMATION
 COMPLETED / COMPLETED_WITH_ERRORS → REVERSED
 ```
 
-解析结果每 200 行写入 `import_rows` 并清理持久化上下文，不把整个源文件保存在内存。正式确认在一个数据库事务中完成，使用 20,000 行硬上限控制内存和事务时长；唯一约束、外部交易 ID/fingerprint 和行状态使失败后的整批重试保持幂等。完整规则见 [sumup-import.md](sumup-import.md)。
+新 SumUp 批次在上传前必须选择启用展会。解析结果每 200 行写入 `import_rows` 并清理持久化上下文，不把整个源文件保存在内存。正式确认在一个数据库事务中完成；生成订单统一使用展会渠道，SumUp 只作为支付方式。完整规则见 [sumup-import.md](sumup-import.md)。
 
 ### 报表
 
@@ -122,9 +122,11 @@ COMPLETED / COMPLETED_WITH_ERRORS → REVERSED
 - SumUp 导入生成的订单只计算订单一次。
 - 商品销售汇总和会计汇总用于对账，不与逐笔数据同时进入主销售额。
 - 未分配交易可进入财务销售额，但不能进入具体商品销量。
+- 库存售出的 `数量 × 实际单价` 只进入独立库存售出分析，绝不进入 `ReportSourcePolicy` 的财务销售额。
 
 商品累计销售数据通过聚合查询返回，不反写 `products`。
 报表的估算商品成本使用商品当前 `cost_price` 乘以未退款数量；估算毛利为净销售额减去该成本。订单目前没有成本价快照，因此历史成本变化会影响这一估算，界面会明确标记为估算值。
+财务趋势默认按日，也可按 Tenant 时区按小时聚合；小时范围最多 31 天，管理员小时视图必须选择单一 Tenant。管理员订单/库存列表使用轻量 JDBC 投影，未选 Tenant 时范围最多 90 天，页大小上限 50，不加载订单明细。
 
 ## i18n 与区域设置
 

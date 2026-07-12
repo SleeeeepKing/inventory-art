@@ -113,7 +113,7 @@ class InventoryArtIntegrationTest {
     @Test void salesEventsAreTenantScopedFilterOrdersAndRejectDisabledEvents() throws Exception {
         Fixture first=fixture("event-first"),second=fixture("event-second");Product product=product(first,"EVENT",5);
         String created=mvc.perform(post("/api/v1/sales-events").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"JAPAN EXPO PARIS 2026\"}"))
+                .content("{\"name\":\"JAPAN EXPO PARIS 2026\",\"startDate\":\"2026-07-01\",\"endDate\":\"2026-07-05\"}"))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value("JAPAN EXPO PARIS 2026"))
             .andReturn().getResponse().getContentAsString();
         UUID eventId=UUID.fromString(json.readTree(created).get("id").asText());
@@ -121,7 +121,7 @@ class InventoryArtIntegrationTest {
         mvc.perform(get("/api/v1/sales-events").with(userJwt(second)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
         mvc.perform(put("/api/v1/sales-events/{id}",eventId).with(userJwt(second)).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Changed\",\"enabled\":true}"))
+                .content("{\"name\":\"Changed\",\"startDate\":\"2026-07-01\",\"endDate\":\"2026-07-05\",\"enabled\":true}"))
             .andExpect(status().isNotFound());
 
         String order=json.writeValueAsString(Map.of(
@@ -158,6 +158,53 @@ class InventoryArtIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.items").isArray());
         mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.timezone").value("Europe/Paris"));
+    }
+
+    @Test void batchOrdersAndInventorySalesShareEventWithoutDoubleCountingRevenue() throws Exception {
+        Fixture fixture=fixture("event-sales");Product product=product(fixture,"EVENT-SALE",10);
+        String eventJson=mvc.perform(post("/api/v1/sales-events").with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Paris Expo\",\"startDate\":\"2026-07-01\",\"endDate\":\"2026-07-05\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID eventId=UUID.fromString(json.readTree(eventJson).get("id").asText());
+        String batch=json.writeValueAsString(Map.of(
+            "eventId",eventId,"currency","EUR","paymentMethod","CASH","paymentStatus","PAID",
+            "orderDate","2026-07-05T10:15:00Z",
+            "orders",List.of(Map.of("totalAmount",10),Map.of("totalAmount",20))));
+        mvc.perform(post("/api/v1/orders/batch").with(userJwt(fixture)).contentType(MediaType.APPLICATION_JSON).content(batch))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.orderCount").value(2))
+            .andExpect(jsonPath("$.totalAmount").value(30));
+        assertThat(products.findById(product.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
+
+        String sale=json.writeValueAsString(Map.of(
+            "salesChannel","EXHIBITION","eventId",eventId,"currency","EUR",
+            "items",List.of(Map.of("productId",product.getId(),"quantity",2,"unitPrice",12.5))));
+        mvc.perform(post("/api/v1/inventory/sales").with(userJwt(fixture)).contentType(MediaType.APPLICATION_JSON).content(sale))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.attributedDate").value("2026-07-05"))
+            .andExpect(jsonPath("$.movements[0].attributedAmount").value(25));
+        assertThat(products.findById(product.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+
+        mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(fixture))
+                .param("start","2026-07-05").param("end","2026-07-05").param("granularity","HOUR"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currencies[0].netSales").value(30))
+            .andExpect(jsonPath("$.salesTrend[0].bucket").value("2026-07-05T12:00:00"));
+        mvc.perform(get("/api/v1/reports/inventory-sales").with(userJwt(fixture))
+                .param("start","2026-07-05").param("end","2026-07-05"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currencies[0].units").value(2))
+            .andExpect(jsonPath("$.currencies[0].attributedAmount").value(25))
+            .andExpect(jsonPath("$.byProduct[0].weightedAveragePrice").value(12.5));
+
+        Product scarce=product(fixture,"SCARCE",1);
+        String failingSale=json.writeValueAsString(Map.of(
+            "salesChannel","EXHIBITION","eventId",eventId,"currency","EUR",
+            "items",List.of(
+                Map.of("productId",product.getId(),"quantity",1,"unitPrice",12.5),
+                Map.of("productId",scarce.getId(),"quantity",2,"unitPrice",5))));
+        mvc.perform(post("/api/v1/inventory/sales").with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON).content(failingSale))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+        assertThat(products.findById(product.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+        assertThat(products.findById(scarce.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);
     }
 
     @Test void orderLifecycleNeverChangesInventory() {
@@ -239,6 +286,34 @@ class InventoryArtIntegrationTest {
         mvc.perform(get("/api/v1/admin/reports/dashboard").with(adminJwt(admin)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.defaultCurrency").value("MULTI"));
         assertThat(audits.findAll()).anyMatch(a->a.getAction().equals("ADMIN_TENANT_READ")&&f.tenant.getId().equals(a.getTenantId()));
+    }
+
+    @Test void adminOperationalViewsFilterBySystemUserAndRejectRegularUsers() throws Exception {
+        Fixture fixture=fixture("admin-operations");Product product=product(fixture,"ADMIN-OPS",4);
+        OrderDtos.Request request=new OrderDtos.Request(List.of(),new BigDecimal("18.00"),SalesChannel.ONLINE,
+            null,null,null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+        orderService.create(fixture.tenant.getId(),fixture.user.getId(),request);
+        inventory.apply(fixture.tenant.getId(),product.getId(),1,MovementType.ADJUSTMENT_IN,
+            null,null,"restock",null,fixture.user.getId());
+        User admin=users.save(new User(UUID.randomUUID(),null,"operations-admin-"+UUID.randomUUID(),
+            "operations-admin-"+UUID.randomUUID()+"@test.local",passwords.encode("ValidPassword123!"),
+            "Admin",UserRole.ADMIN));
+        mvc.perform(get("/api/v1/admin/orders").with(adminJwt(admin))
+                .param("tenantId",fixture.tenant.getId().toString())
+                .param("userId",fixture.user.getId().toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.items[0].createdByName").value(fixture.user.getDisplayName()));
+        mvc.perform(get("/api/v1/admin/inventory/movements").with(adminJwt(admin))
+                .param("tenantId",fixture.tenant.getId().toString())
+                .param("userId",fixture.user.getId().toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+            .andExpect(jsonPath("$.items[0].operatorName").value(fixture.user.getDisplayName()));
+        mvc.perform(get("/api/v1/admin/reports/dashboard").with(adminJwt(admin))
+                .param("granularity","HOUR"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("TENANT_REQUIRED_FOR_HOURLY_REPORT"));
+        mvc.perform(get("/api/v1/admin/orders").with(userJwt(fixture)))
+            .andExpect(status().isForbidden());
     }
 
     @Test void disabledTenantBlocksLoginRefreshAndExistingAccessToken() throws Exception {

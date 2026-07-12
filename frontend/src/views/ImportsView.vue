@@ -63,6 +63,7 @@ onMounted(load)
       <div class="table-toolbar"><ElButton :icon="RefreshRight" @click="load">{{ t('common.refresh') }}</ElButton><span class="table-toolbar__count">{{ t('common.items', { count: page.totalElements }) }}</span></div>
       <ElTable v-if="page.items.length || loading" v-loading="loading" :data="page.items" row-key="id">
         <ElTableColumn :label="t('import.file')" prop="originalFilename" min-width="230"><template #default="scope"><div class="file-cell"><span class="file-extension">{{ (scope.row.originalFilename.split('.').pop() || '—').toUpperCase() }}</span><strong>{{ scope.row.originalFilename }}</strong></div></template></ElTableColumn>
+        <ElTableColumn :label="t('import.salesEvent')" prop="eventName" min-width="220" show-overflow-tooltip />
         <ElTableColumn :label="t('import.type')" prop="importType" min-width="150" />
         <ElTableColumn :label="t('import.rows')" min-width="120" align="right"><template #default="scope">{{ number(scope.row.importedRows ?? scope.row.validRows ?? scope.row.totalRows) }} / {{ number(scope.row.totalRows) }}</template></ElTableColumn>
         <ElTableColumn :label="t('common.status')" min-width="190"><template #default="scope"><StatusPill :status="scope.row.status" /></template></ElTableColumn>

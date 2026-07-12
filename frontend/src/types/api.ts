@@ -85,6 +85,14 @@ export interface InventoryMovement {
   createdAt: string
   createdByName?: string
   operatorId?: string
+  saleBatchId?: string
+  salesChannel?: string
+  eventId?: string
+  eventName?: string
+  attributedDate?: string
+  unitPrice?: number
+  currency?: string
+  attributedAmount?: number
 }
 
 export interface OrderItem {
@@ -119,6 +127,7 @@ export interface Order {
   items: OrderItem[]
   orderedAt?: string
   orderDate: string
+  createdBy?: string
   createdAt?: string
 }
 
@@ -134,9 +143,20 @@ export interface OrderBatchResponse {
   failed: OrderBatchFailure[]
 }
 
+export interface OrderBatchCreateResponse {
+  eventId: string
+  eventName: string
+  currency: string
+  orderCount: number
+  totalAmount: number
+  orders: Array<{ id: string; orderNumber: string; status: string }>
+}
+
 export interface SalesEvent {
   id: string
   name: string
+  startDate: string
+  endDate: string
   enabled: boolean
   createdAt: string
   updatedAt: string
@@ -162,6 +182,8 @@ export interface ImportBatch {
   completedAt?: string
   orderCount?: number
   inventoryMovementCount?: number
+  eventId?: string
+  eventName?: string
 }
 
 export interface ReportSummary {

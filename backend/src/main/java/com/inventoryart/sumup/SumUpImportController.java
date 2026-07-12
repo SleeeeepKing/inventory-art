@@ -31,8 +31,9 @@ public class SumUpImportController {
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<SumUpDtos.BatchResponse> upload(@RequestPart("file") MultipartFile file,
+                                                          @RequestParam UUID eventId,
                                                           @RequestParam(defaultValue = "UNKNOWN") ImportType importType) {
-        return ResponseEntity.status(201).body(imports.upload(file, importType));
+        return ResponseEntity.status(201).body(imports.upload(file, importType, eventId));
     }
 
     @GetMapping
@@ -40,6 +41,12 @@ public class SumUpImportController {
 
     @GetMapping("/{batchId}")
     public SumUpDtos.BatchResponse get(@PathVariable UUID batchId) { return imports.get(batchId); }
+
+    @PutMapping("/{batchId}/event")
+    public SumUpDtos.BatchResponse event(@PathVariable UUID batchId,
+                                         @Valid @RequestBody SumUpDtos.EventRequest request) {
+        return imports.assignEvent(batchId, request);
+    }
 
     @PostMapping("/{batchId}/analyze")
     public SumUpDtos.AnalyzeResponse analyze(@PathVariable UUID batchId) { return imports.analyze(batchId); }

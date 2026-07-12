@@ -128,7 +128,7 @@ APP_SEED_ENABLED=false
 JAVA_TOOL_OPTIONS=-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=144m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
 ```
 
-Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 192 MB、Metaspace 最大 144 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 16 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。144 MB 的 Metaspace 上限可容纳 Spring Boot、Hibernate、Flyway 和 springdoc 初始化后的类元数据，同时仍为 512 MB 容器预留线程栈、代码缓存、直接内存和本地库空间。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 额外通过 `IMPORT_XLS_MAX_BYTES=5242880` 限制为 5 MB，避免 XLSX/CSV、Hibernate 批处理和并发请求同时把内存推到容器上限。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
+Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 192 MB、Metaspace 最大 144 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 16 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。订单批量补录和库存售出各最多 100 行；管理员页大小上限 50，未选 Tenant 时必须限制在 90 天内；小时报表最多 31 天且只返回聚合结果。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 限制为 5 MB。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
 
 首次创建管理员时，通过 Railway Secret 临时设置：
 
@@ -220,10 +220,11 @@ Refresh/Logout 是 Cookie 请求，后端还会检查 Origin；仅配置浏览�
 3. 创建两个测试 Tenant/User，确认用户 A 猜测用户 B 商品/订单/文件 ID 时得到 404。
 4. 新用户首次登录为英文；保存 `zh-CN`、退出并重新登录后恢复中文，再验证 `fr-FR`。
 5. 创建商品、获取预签名 PUT、从浏览器上传图片并完成 HEAD 确认；直接匿名列举 Bucket 失败。
-6. 调整库存并检查流水；再创建、确认、取消和退款订单，确认这些订单操作都不改变库存。
-7. 上传合成 SumUp 文件：上传、确认和撤销都不改库存；重复文件被拒绝；错误 CSV 受 Tenant 保护。
-8. 报表对同一订单和关联 SumUp 交易只计算一次，不同币种分别显示。
-9. ADMIN 跨 Tenant 查询生成 AuditLog。
+6. 创建带起止日期的展会；批量补录两笔金额，确认共同交易时间和录入人正确且库存不变。
+7. 在库存页为该展会批量记录商品数量和实际单价，确认整批原子扣减、分析归属日等于展会结束日，备注可以为空。
+8. 上传合成 SumUp 文件前必须选择展会；确认生成订单为展会渠道、SumUp 支付方式，上传/确认/撤销都不改库存。
+9. 财务报表按日/小时聚合订单金额；库存售出分析显示归因金额，但财务净销售额不增加。
+10. ADMIN 按 Tenant、系统用户、时间、渠道和展会筛选订单/库存，并确认生成 AuditLog。
 
 ## 监控与运维
 

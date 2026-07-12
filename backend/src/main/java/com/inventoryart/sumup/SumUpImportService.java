@@ -6,6 +6,8 @@ import com.inventoryart.common.PageResponse;
 import com.inventoryart.config.AppProperties;
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
+import com.inventoryart.event.SalesEvent;
+import com.inventoryart.event.SalesEventService;
 import com.inventoryart.security.CurrentUserService;
 import com.inventoryart.storage.StorageService;
 import jakarta.persistence.EntityManager;
@@ -57,6 +59,7 @@ public class SumUpImportService {
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
     private final AuditService audit;
+    private final SalesEventService salesEvents;
     private final long maxFileSize;
     private final long legacySpreadsheetMaxFileSize;
     private final int batchSize;
@@ -68,7 +71,7 @@ public class SumUpImportService {
                               StorageService storage, SumUpFileParser parser, CurrentUserService currentUser,
                               ObjectProvider<SumUpImportCommitter> committer, JdbcTemplate jdbc,
                               ObjectMapper objectMapper, EntityManager entityManager, AuditService audit,
-                              AppProperties properties) {
+                              SalesEventService salesEvents, AppProperties properties) {
         this.batches = batches;
         this.rows = rows;
         this.columnMappings = columnMappings;
@@ -81,6 +84,7 @@ public class SumUpImportService {
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
         this.audit = audit;
+        this.salesEvents = salesEvents;
         this.maxFileSize = properties.getImportConfig().getMaxFileSize();
         this.legacySpreadsheetMaxFileSize = properties.getImportConfig().getLegacySpreadsheetMaxFileSize();
         this.batchSize = Math.max(50, properties.getImportConfig().getBatchSize());
@@ -88,10 +92,11 @@ public class SumUpImportService {
     }
 
     @Transactional
-    public SumUpDtos.BatchResponse upload(MultipartFile file, ImportType requestedType) {
+    public SumUpDtos.BatchResponse upload(MultipartFile file, ImportType requestedType, UUID eventId) {
         String filename = safeFilename(file.getOriginalFilename());
         validateUpload(file, filename);
         UUID tenantId = currentUser.tenantId();
+        SalesEvent event = salesEvents.requiredEnabled(tenantId, eventId);
         String checksum = checksum(file);
         batches.findByTenantIdAndSourceProviderAndFileChecksum(tenantId, "SUMUP", checksum).ifPresent(existing -> {
             throw new BusinessException("DUPLICATE_IMPORT_FILE",
@@ -108,7 +113,7 @@ public class SumUpImportService {
         }
         try {
             ImportBatch batch = ImportBatch.uploaded(tenantId, requestedType, filename, key, checksum, file.getSize(),
-                currentUser.userId());
+                event.getId(), event.getName(), currentUser.userId());
             // Keep the object-path UUID equal to the persisted batch UUID.
             setBatchId(batch, batchId);
             ImportBatch saved = batches.save(batch);
@@ -136,6 +141,16 @@ public class SumUpImportService {
 
     @Transactional(readOnly = true)
     public SumUpDtos.BatchResponse get(UUID batchId) { return SumUpDtos.BatchResponse.from(required(batchId)); }
+
+    @Transactional
+    public SumUpDtos.BatchResponse assignEvent(UUID batchId, SumUpDtos.EventRequest request) {
+        ImportBatch batch = required(batchId);
+        SalesEvent event = salesEvents.requiredEnabled(batch.getTenantId(), request.eventId());
+        batch.assignEvent(event.getId(), event.getName());
+        audit.record(batch.getTenantId(), "SUMUP_IMPORT_EVENT_UPDATE", "IMPORT_BATCH", batchId, "SUCCESS",
+            Map.of("eventId", event.getId()));
+        return SumUpDtos.BatchResponse.from(batch);
+    }
 
     @Transactional
     public SumUpDtos.AnalyzeResponse analyze(UUID batchId) {
@@ -347,6 +362,10 @@ public class SumUpImportService {
         if (batch.getStatus() != ImportBatchStatus.READY_FOR_CONFIRMATION) {
             throw SumUpExceptions.invalidState(batch.getStatus(), "be confirmed");
         }
+        if (batch.getEventId() == null) {
+            throw new BusinessException("IMPORT_EVENT_REQUIRED", "A sales event must be selected before confirmation");
+        }
+        salesEvents.requiredEnabled(batch.getTenantId(), batch.getEventId());
         SumUpImportCommitter integration = committer.getIfAvailable();
         if (integration == null) {
             throw new BusinessException("IMPORT_COMMITTER_NOT_AVAILABLE",

@@ -76,6 +76,15 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
             && batch.status() != ImportBatchStatus.IMPORTING) {
             throw SumUpExceptions.invalidState(batch.status(), "be confirmed");
         }
+        if (batch.eventId() == null) {
+            throw new BusinessException("IMPORT_EVENT_REQUIRED", "A sales event must be selected before confirmation");
+        }
+        Integer activeEvent = jdbc.queryForObject("""
+            select count(*) from sales_events where tenant_id = ? and id = ? and enabled = true
+            """, Integer.class, command.tenantId(), batch.eventId());
+        if (activeEvent == null || activeEvent == 0) {
+            throw new BusinessException("SALES_EVENT_DISABLED", "The selected sales event is not available");
+        }
         verifyActor(command.actorId(), command.tenantId());
         lockTenant(command.tenantId());
         jdbc.update("""
@@ -158,7 +167,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                 } else if (orderId == null && isSuccessfulSale(row.normalized())) {
                     BigDecimal amount = amount(row.normalized(), "amount", "grossRevenue", "revenue", "netRevenue");
                     if (amount.compareTo(BigDecimal.ZERO) > 0) {
-                        orderId = createTransactionOrder(command, defaults, row, amount);
+                        orderId = createTransactionOrder(command, batch, defaults, row, amount);
                         linkExternalOrder(external.id(), command.tenantId(), orderId);
                     }
                 }
@@ -196,7 +205,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
 
                 List<Line> lines = orderLines(command.tenantId(), group, orderCurrency);
                 boolean fullyMapped = lines.stream().allMatch(line -> line.product() != null);
-                UUID orderId = createProductOrder(command, entry.getKey(), representative, orderCurrency, lines,
+                UUID orderId = createProductOrder(command, batch, entry.getKey(), representative, orderCurrency, lines,
                     fullyMapped);
                 insertOrderItems(command.tenantId(), orderId, lines);
                 linkExternalOrder(external.id(), command.tenantId(), orderId);
@@ -347,24 +356,24 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         return matches.stream().findFirst();
     }
 
-    private UUID createTransactionOrder(ConfirmCommand command, TenantDefaults defaults, Row row,
+    private UUID createTransactionOrder(ConfirmCommand command, Batch batch, TenantDefaults defaults, Row row,
                                         BigDecimal amount) {
         UUID orderId = UUID.randomUUID();
         Instant orderDate = instant(row.normalized(), "occurredAt").orElseGet(DefaultSumUpImportCommitter::now);
-        insertOrder(orderId, command, orderNumber(command.batchId(), "row-" + row.rowNumber()),
+        insertOrder(orderId, command, batch, orderNumber(command.batchId(), "row-" + row.rowNumber()),
             text(row.normalized(), "transactionId", 200), currency(row.normalized(), defaults.currency()),
             amount, ZERO, ZERO, amount, amount, "UNALLOCATED", orderDate);
         return orderId;
     }
 
-    private UUID createProductOrder(ConfirmCommand command, String groupKey, Row representative,
+    private UUID createProductOrder(ConfirmCommand command, Batch batch, String groupKey, Row representative,
                                     String orderCurrency, List<Line> lines, boolean fullyMapped) {
         BigDecimal subtotal = lines.stream().map(Line::subtotal).reduce(ZERO, BigDecimal::add);
         BigDecimal discount = lines.stream().map(Line::discount).reduce(ZERO, BigDecimal::add);
         BigDecimal tax = lines.stream().map(Line::tax).reduce(ZERO, BigDecimal::add);
         BigDecimal total = lines.stream().map(Line::total).reduce(ZERO, BigDecimal::add);
         UUID orderId = UUID.randomUUID();
-        insertOrder(orderId, command, orderNumber(command.batchId(), groupKey),
+        insertOrder(orderId, command, batch, orderNumber(command.batchId(), groupKey),
             text(representative.normalized(), "transactionId", 200),
             orderCurrency,
             money(subtotal), money(discount), money(tax), money(total),
@@ -373,20 +382,20 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         return orderId;
     }
 
-    private void insertOrder(UUID orderId, ConfirmCommand command, String number, String externalTransactionId,
+    private void insertOrder(UUID orderId, ConfirmCommand command, Batch batch, String number, String externalTransactionId,
                              String currency, BigDecimal subtotal, BigDecimal discount, BigDecimal tax,
                              BigDecimal total, BigDecimal unallocated, String allocationStatus, Instant orderDate) {
         jdbc.update("""
             insert into orders
               (id, tenant_id, order_number, source, external_provider, external_transaction_id,
-               status, allocation_status, sales_channel, currency, subtotal, discount_amount, tax_amount,
+               status, allocation_status, sales_channel, event_id, event_name, currency, subtotal, discount_amount, tax_amount,
                refund_amount, total_amount, unallocated_amount, payment_method, payment_status, order_date,
                inventory_applied, manually_modified_after_import, import_batch_id, created_by,
                created_at, updated_at, version)
-            values (?, ?, ?, 'SUMUP_IMPORT', 'SUMUP', ?, 'COMPLETED', ?, 'SUMUP', ?, ?, ?, ?, ?, ?, ?,
+            values (?, ?, ?, 'SUMUP_IMPORT', 'SUMUP', ?, 'COMPLETED', ?, 'EXHIBITION', ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     'SUMUP', 'PAID', ?, false, false, ?, ?, now(), now(), 0)
             """, orderId, command.tenantId(), number, externalTransactionId,
-            allocationStatus, currency,
+            allocationStatus, batch.eventId(), batch.eventName(), currency,
             subtotal, discount, tax, ZERO, total, unallocated, timestamp(orderDate),
             command.batchId(), command.actorId());
         jdbc.update("""
@@ -709,12 +718,13 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
 
     private Batch lockedBatch(UUID batchId, UUID tenantId) {
         List<Batch> batches = jdbc.query("""
-            select id, tenant_id, import_type, status, analysis_version, created_at,
+            select id, tenant_id, import_type, status, analysis_version, created_at, event_id, event_name,
                    imported_rows, updated_rows, duplicate_rows, error_rows, order_count
               from import_batches where id = ? and tenant_id = ? for update
             """, (rs, rowNum) -> new Batch((UUID) rs.getObject("id"), (UUID) rs.getObject("tenant_id"),
             ImportType.valueOf(rs.getString("import_type")), ImportBatchStatus.valueOf(rs.getString("status")),
             rs.getInt("analysis_version"), rs.getTimestamp("created_at").toInstant(),
+            (UUID) rs.getObject("event_id"), rs.getString("event_name"),
             rs.getInt("imported_rows"), rs.getInt("updated_rows"), rs.getInt("duplicate_rows"),
             rs.getInt("error_rows"), rs.getInt("order_count")), batchId, tenantId);
         if (batches.isEmpty()) throw new NotFoundException("Import batch");
@@ -933,7 +943,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
     private enum UpsertOutcome { INSERTED, UPDATED, DUPLICATE }
 
     private record Batch(UUID id, UUID tenantId, ImportType importType, ImportBatchStatus status,
-                         int analysisVersion, Instant createdAt, int importedRows, int updatedRows,
+                         int analysisVersion, Instant createdAt, UUID eventId, String eventName, int importedRows, int updatedRows,
                          int duplicateRows, int errorRows, int orderCount) {}
 
     private record Row(UUID id, UUID tenantId, UUID batchId, int rowNumber, String externalTransactionId,

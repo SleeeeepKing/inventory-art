@@ -10,7 +10,7 @@
 
 拒绝 PDF、图片、可执行文件、包含宏的文件和无法识别的内容。默认上限为 20 MB，由 `IMPORT_MAX_FILE_SIZE`（HTTP）和 `IMPORT_MAX_BYTES`（业务层）共同限制。CSV 与 XLSX 采用流式读取；XLSX 使用临时磁盘和 SAX 事件解析，不构造完整工作簿。旧版 XLS 默认最大 5 MB（`IMPORT_XLS_MAX_BYTES`）。所有格式默认最多 20,000 个数据行（`IMPORT_MAX_ROWS`），以适配 Railway 512 MB 实例。测试使用合成文件，不依赖真实交易数据。
 
-上传、分析、预览都不会修改订单或交易。用户必须在预览影响后明确确认，后端才执行正式导入；包括正式导入和撤销在内的整个流程都不会修改库存。
+上传、分析、预览都不会修改订单或交易。新上传必须先选择当前 Tenant 的启用展会，批次保存展会 ID 和名称快照。用户必须在预览影响后明确确认，后端才执行正式导入；包括正式导入和撤销在内的整个流程都不会修改库存。
 
 ## 支持的数据粒度
 
@@ -46,11 +46,11 @@ flowchart LR
 
 ### 1. 上传
 
-1. 从当前认证上下文取得 Tenant；请求不能指定其他 Tenant。
+1. 从当前认证上下文取得 Tenant，并校验请求中的 `eventId` 属于该 Tenant 且已启用；请求不能指定其他 Tenant。
 2. 校验扩展名、MIME、文件签名和大小；文件名只作为显示 metadata，不能影响 object key。
 3. 流式计算文件字节的 SHA-256 checksum，同时写入 Tenant 私有存储。
 4. 以 `(tenant_id, SUMUP, checksum)` 检查重复。相同内容即使改名也返回 `DUPLICATE_IMPORT_FILE`，并提供既有批次 ID。
-5. 创建 `UPLOADED` ImportBatch。此阶段不解析业务行，不写订单/交易/库存。
+5. 创建带展会快照的 `UPLOADED` ImportBatch。处理中且缺少展会的历史批次可通过受状态限制的设置展会接口补齐。
 
 ### 2. 分析
 
@@ -116,6 +116,7 @@ flowchart LR
 - ImportBatch 通过条件更新从 `READY_FOR_CONFIRMATION` 进入 `IMPORTING`，防止两个确认任务并发执行。
 - 分析和重映射按 `IMPORT_BATCH_SIZE=200` 分批写入；正式确认在一个数据库事务中完成，以保证订单、交易和行状态原子一致。为避免长事务和内存失控，单批次硬性限制为 20,000 行。
 - 行状态、销售记录和批次进度在对应事务中一起提交。
+- 新生成订单固定写 `sales_channel=EXHIBITION`、批次 `event_id/event_name` 和 `payment_method=SUMUP`；SumUp 是支付方式，不是新数据的销售渠道。
 - 系统级中断会回滚整个正式确认事务；用户可以安全重试整批确认，唯一约束和幂等引用防止重复订单或销售额。当前版本不在单个批次内部断点续跑。
 - 最终状态按结果设置 `COMPLETED` 或 `COMPLETED_WITH_ERRORS`；系统级失败使用 `FAILED` 并保留可诊断错误。
 
@@ -239,8 +240,9 @@ normalizedMerchantReference
 ## API
 
 ```text
-POST /api/v1/imports/sumup/upload
+POST /api/v1/imports/sumup/upload?eventId={salesEventId}
 GET  /api/v1/imports/sumup/{batchId}
+PUT  /api/v1/imports/sumup/{batchId}/event
 POST /api/v1/imports/sumup/{batchId}/analyze
 PUT  /api/v1/imports/sumup/{batchId}/column-mapping
 GET  /api/v1/imports/sumup/{batchId}/preview

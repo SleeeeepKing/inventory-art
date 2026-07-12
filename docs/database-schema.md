@@ -18,6 +18,9 @@ erDiagram
     USERS ||--o{ REFRESH_TOKENS : owns
     TENANTS ||--o{ PRODUCTS : owns
     PRODUCTS ||--o{ INVENTORY_MOVEMENTS : records
+    TENANTS ||--o{ SALES_EVENTS : owns
+    SALES_EVENTS ||--o{ INVENTORY_SALE_BATCHES : attributes
+    INVENTORY_SALE_BATCHES ||--o{ INVENTORY_MOVEMENTS : contains
     TENANTS ||--o{ ORDERS : owns
     ORDERS ||--o{ ORDER_ITEMS : optionally_contains
     ORDERS ||--o{ PAYMENTS : receives
@@ -52,15 +55,17 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 | 表 | 目的与关键字段 | 关键约束/索引 |
 | --- | --- | --- |
 | `products` | 商品资料、售价/成本、当前库存、低库存阈值、乐观锁版本 | `UNIQUE(tenant_id,sku)`；`current_stock >= 0`；Tenant + enabled + name 索引 |
-| `inventory_movements` | 每次独立库存调整的前后值、类型、数量、引用和操作人 | `stock_after >= 0`；Tenant + product + created_at 索引；记录不可物理删除 |
+| `sales_events` | 展会名称、开始/结束日期和启用状态 | Tenant 内名称唯一；`end_date >= start_date`；Tenant + end_date 索引 |
+| `inventory_sale_batches` | 渠道、展会 ID/名称快照、币种、分析归属日、备注和操作人 | 展会使用 Tenant 组合外键；按日期/渠道/展会索引 |
+| `inventory_movements` | 每次独立库存调整的前后值、类型、数量、售出批次、实际单价和操作人 | `stock_after >= 0`、`unit_price >= 0`；Tenant + product/operator/date 索引；记录不可物理删除 |
 
-`products.current_stock` 是便于读取的当前快照，`inventory_movements` 是审计来源。两者只能在一个库存事务中同时变更。`quantity` 使用有符号数表达增加或扣减，`stock_before/stock_after` 用于检测和审计异常。
+`products.current_stock` 是便于读取的当前快照，`inventory_movements` 是审计来源。售出批次先写 `inventory_sale_batches`，再为每个商品写负向 `SALE` 流水；同一事务中任一库存不足会回滚全部记录。展会批次的 `attributed_date` 固定为 `sales_events.end_date`，线上/其他渠道使用提交时 Tenant 本地日期。
 
 ### 订单、支付和退款
 
 | 表 | 目的与关键字段 | 关键约束/索引 |
 | --- | --- | --- |
-| `orders` | 订单号、来源、状态、分配状态、渠道、客户快照、必填金额和币种 | `UNIQUE(tenant_id,order_number)`；Tenant + 日期/状态索引；`version` 乐观锁 |
+| `orders` | 订单号、来源、状态、分配状态、展会、渠道、录入人、客户快照、必填金额和币种 | `UNIQUE(tenant_id,order_number)`；Tenant + 渠道/录入人/日期索引；`version` 乐观锁 |
 | `order_items` | 商品关联与 SKU/名称快照、单价、数量、税/折扣/行总额、已退款数量 | Tenant 组合外键到订单和商品；`quantity > 0` |
 | `payments` | 订单支付、provider 交易号、金额、币种、方式和状态 | Tenant 组合外键到订单 |
 | `order_refunds` | 订单级退款金额、原因和操作人 | Tenant 组合外键到订单；保留历史 |
@@ -72,7 +77,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 
 | 表 | 目的与关键字段 | 关键约束/索引 |
 | --- | --- | --- |
-| `import_batches` | 文件、checksum、类型、检测结果、分析版本、状态和汇总计数 | `UNIQUE(tenant_id,source_provider,file_checksum)`；Tenant + status + created_at 索引 |
+| `import_batches` | 文件、checksum、类型、展会 ID/名称快照、分析版本、状态和汇总计数 | `UNIQUE(tenant_id,source_provider,file_checksum)`；Tenant + status/event + created_at 索引 |
 | `import_rows` | 分批持久化的标准化行、已清理原始数据、错误、关联订单/商品 | `UNIQUE(tenant_id,import_batch_id,row_number)`；批次 + 状态索引 |
 | `import_column_mappings` | 此批次源列到规范字段的映射 | `UNIQUE(tenant_id,import_batch_id,source_column)` |
 | `external_transactions` | SumUp 交易状态、金额、费用、支付信息、fingerprint、清理后的 JSON | 非空 provider ID 的部分唯一索引；Tenant + provider + fingerprint 唯一 |
@@ -113,7 +118,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 ## 金额、币种和时间
 
 - 每个金额列都和同一记录的 ISO 4217 `currency` 一起解释。
-- 订单总额由请求显式提供且必须为正数；商品行金额只用于商品销售分析，不覆盖订单总额。数据库的四位小数保留中间精度，API/展示按币种舍入。
+- 订单总额由请求显式提供且必须为正数；库存售出归因金额为 `abs(quantity) × unit_price`，只用于商品/渠道/定价分析，不覆盖或累加到订单总额。
 - 报表按币种分组，禁止在 SQL 中把不同币种直接 `SUM` 成一个值。
 - 用户提交的本地日期范围先使用 Tenant `timezone` 转为半开 UTC 区间 `[start,end)`，再查询 `TIMESTAMPTZ`。
 - `tenants.locale` 用于业务区域默认值；`users.preferred_locale` 控制 UI 文案，默认英文。

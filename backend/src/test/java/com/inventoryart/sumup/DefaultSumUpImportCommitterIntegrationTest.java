@@ -75,6 +75,12 @@ class DefaultSumUpImportCommitterIntegrationTest {
             .isEqualTo(1);
         assertThat(string("select allocation_status from orders where import_batch_id = ?", batch))
             .isEqualTo("FULLY_ALLOCATED");
+        assertThat(string("select sales_channel from orders where import_batch_id = ?", batch))
+            .isEqualTo("EXHIBITION");
+        assertThat(string("select payment_method from orders where import_batch_id = ?", batch))
+            .isEqualTo("SUMUP");
+        assertThat(integer("select count(*) from orders where import_batch_id = ? and event_id is not null", batch))
+            .isEqualTo(1);
         assertThat(string("select status from import_batches where id = ?", batch)).isEqualTo("COMPLETED");
 
         committer.reverse(new SumUpImportCommitter.ReverseCommand(tenant, actor, batch));
@@ -373,13 +379,20 @@ class DefaultSumUpImportCommitterIntegrationTest {
     }
 
     private void insertBatch(UUID tenant, UUID actor, UUID batch, String type) {
+        UUID event = UUID.randomUUID();
+        String eventName = "Test exhibition " + batch.toString().substring(0, 8);
+        jdbc.update("""
+            insert into sales_events
+              (id, tenant_id, name, start_date, end_date, enabled, created_at, updated_at)
+            values (?, ?, ?, '2026-07-01', '2026-07-05', true, now(), now())
+            """, event, tenant, eventName);
         jdbc.update("""
             insert into import_batches
               (id, tenant_id, source_provider, import_type, original_filename, stored_object_key,
-               file_checksum, file_size, analysis_version, status, created_by, created_at)
-            values (?, ?, 'SUMUP', ?, 'test.csv', ?, ?, 100, 1, 'READY_FOR_CONFIRMATION', ?, now())
+               file_checksum, file_size, analysis_version, status, event_id, event_name, created_by, created_at)
+            values (?, ?, 'SUMUP', ?, 'test.csv', ?, ?, 100, 1, 'READY_FOR_CONFIRMATION', ?, ?, ?, now())
             """, batch, tenant, type, "tenants/" + tenant + "/imports/" + batch,
-            batch.toString().replace("-", "").repeat(2), actor);
+            batch.toString().replace("-", "").repeat(2), event, eventName, actor);
     }
 
     private int integer(String sql, Object... arguments) {
