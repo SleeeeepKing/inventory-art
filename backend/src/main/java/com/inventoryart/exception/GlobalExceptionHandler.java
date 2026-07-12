@@ -28,6 +28,14 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(BusinessException.class)
   ResponseEntity<ApiError> business(BusinessException ex, HttpServletRequest request) {
+    if (ex.getStatus().is5xxServerError()) {
+      log.error(
+          "Upstream request failure for {} {} with code {}",
+          request.getMethod(),
+          request.getRequestURI(),
+          ex.getCode(),
+          ex);
+    }
     return response(ex.getStatus(), ex.getCode(), ex.getMessage(), request, null);
   }
 

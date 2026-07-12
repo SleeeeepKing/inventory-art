@@ -28,8 +28,7 @@ public class StorageConfiguration {
     StaticCredentialsProvider credentials =
         StaticCredentialsProvider.create(
             AwsBasicCredentials.create(storage.getAccessKey(), storage.getSecretKey()));
-    S3Configuration s3Configuration =
-        S3Configuration.builder().pathStyleAccessEnabled(provider.equals("minio")).build();
+    S3Configuration s3Configuration = s3Configuration(provider);
     S3ClientBuilder clientBuilder =
         S3Client.builder()
             .credentialsProvider(credentials)
@@ -51,5 +50,13 @@ public class StorageConfiguration {
     }
     return new S3CompatibleStorageService(
         clientBuilder.build(), presignerBuilder.build(), storage.getBucket());
+  }
+
+  static S3Configuration s3Configuration(String provider) {
+    boolean cloudflareR2 = provider.equals("r2");
+    return S3Configuration.builder()
+        .pathStyleAccessEnabled(provider.equals("minio") || cloudflareR2)
+        .chunkedEncodingEnabled(!cloudflareR2)
+        .build();
   }
 }
