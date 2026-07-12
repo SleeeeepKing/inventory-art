@@ -7,6 +7,7 @@ declare module 'vue-router' {
     requiresAuth?: boolean
     guestOnly?: boolean
     adminOnly?: boolean
+    userOnly?: boolean
   }
 }
 
@@ -18,12 +19,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
     children: [
       { path: '', redirect: '/dashboard' },
-      { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { titleKey: 'nav.dashboard' } },
-      { path: 'products', name: 'products', component: () => import('@/views/ProductsView.vue'), meta: { titleKey: 'nav.products' } },
-      { path: 'inventory', name: 'inventory', component: () => import('@/views/InventoryView.vue'), meta: { titleKey: 'nav.inventory' } },
-      { path: 'orders', name: 'orders', component: () => import('@/views/OrdersView.vue'), meta: { titleKey: 'nav.orders' } },
-      { path: 'imports', name: 'imports', component: () => import('@/views/ImportsView.vue'), meta: { titleKey: 'nav.imports' } },
-      { path: 'imports/new', name: 'import-new', component: () => import('@/views/ImportWizardView.vue'), meta: { titleKey: 'import.title' } },
+      { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { titleKey: 'nav.dashboard', userOnly: true } },
+      { path: 'products', name: 'products', component: () => import('@/views/ProductsView.vue'), meta: { titleKey: 'nav.products', userOnly: true } },
+      { path: 'inventory', name: 'inventory', component: () => import('@/views/InventoryView.vue'), meta: { titleKey: 'nav.inventory', userOnly: true } },
+      { path: 'orders', name: 'orders', component: () => import('@/views/OrdersView.vue'), meta: { titleKey: 'nav.orders', userOnly: true } },
+      { path: 'imports', name: 'imports', component: () => import('@/views/ImportsView.vue'), meta: { titleKey: 'nav.imports', userOnly: true } },
+      { path: 'imports/new', name: 'import-new', component: () => import('@/views/ImportWizardView.vue'), meta: { titleKey: 'import.title', userOnly: true } },
       { path: 'reports', name: 'reports', component: () => import('@/views/ReportsView.vue'), meta: { titleKey: 'nav.reports' } },
       { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { titleKey: 'nav.profile' } },
       { path: 'admin/tenants', name: 'admin-tenants', component: () => import('@/views/admin/AdminTenantsView.vue'), meta: { titleKey: 'nav.tenants', adminOnly: true } },
@@ -43,5 +44,6 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { name: 'login', query: { redirect: to.fullPath } }
   if (to.meta.guestOnly && auth.isAuthenticated) return { name: 'dashboard' }
   if (to.meta.adminOnly && !auth.isAdmin) return { name: 'dashboard' }
+  if (to.meta.userOnly && auth.isAdmin) return { name: 'reports' }
   return true
 })

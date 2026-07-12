@@ -11,6 +11,8 @@ final class ReportSourcePolicy {
                  o.discount_amount, o.refund_amount,
                  coalesce(f.fee_amount, 0) as fee_amount,
                  (o.total_amount - o.refund_amount) as net_amount,
+                 coalesce(items.cost_amount, 0) as cost_amount,
+                 coalesce(items.unit_count, 0)::bigint as unit_count,
                  1::bigint as order_count,
                  case when o.payment_status in ('PAID','PARTIALLY_REFUNDED','REFUNDED') then 1 else 0 end::bigint as payment_count,
                  o.source, o.sales_channel, o.payment_method, coalesce(o.event_name, '') as event_name
@@ -20,6 +22,14 @@ final class ReportSourcePolicy {
             from external_transactions e
             where e.tenant_id = o.tenant_id and e.linked_order_id = o.id and e.active = true
           ) f on true
+          left join lateral (
+            select coalesce(sum(coalesce(p.cost_price, 0) * greatest(oi.quantity - oi.refunded_quantity, 0)), 0) as cost_amount,
+                   coalesce(sum(greatest(oi.quantity - oi.refunded_quantity, 0)), 0)::bigint as unit_count
+            from order_items oi
+            left join products p on p.tenant_id = oi.tenant_id and p.id = oi.product_id
+              and upper(p.currency) = upper(o.currency)
+            where oi.tenant_id = o.tenant_id and oi.order_id = o.id
+          ) items on true
           where (:tenantId is null or o.tenant_id = cast(:tenantId as uuid))
             and o.order_date >= :from and o.order_date < :to
             and o.status in ('CONFIRMED','COMPLETED','PARTIALLY_REFUNDED','REFUNDED')
@@ -31,6 +41,7 @@ final class ReportSourcePolicy {
                  coalesce(e.refund_amount, 0) as refund_amount,
                  coalesce(e.fee_amount, 0) as fee_amount,
                  (e.amount - coalesce(e.refund_amount, 0)) as net_amount,
+                 0::numeric as cost_amount, 0::bigint as unit_count,
                  1::bigint as order_count, 1::bigint as payment_count,
                  'SUMUP_IMPORT' as source, 'SUMUP' as sales_channel,
                  coalesce(e.payment_method, 'SUMUP') as payment_method, '' as event_name

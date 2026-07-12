@@ -10,11 +10,13 @@ public final class ReportDtos {
 
     public record CurrencyMetrics(String currency, BigDecimal grossSales, BigDecimal discounts,
                                   BigDecimal refunds, BigDecimal netSales, BigDecimal sumUpFees,
-                                  BigDecimal afterFees, long orderCount, long successfulPaymentCount,
-                                  BigDecimal averageOrderValue) {}
+                                  BigDecimal afterFees, BigDecimal productCost,
+                                  BigDecimal estimatedGrossProfit, long unitsSold, long orderCount,
+                                  long successfulPaymentCount, BigDecimal averageOrderValue) {}
     public record DailyTrend(LocalDate date, String currency, BigDecimal netSales, BigDecimal fees, long orders) {}
     public record Breakdown(String label, String currency, BigDecimal netSales, long orders) {}
-    public record ProductRank(UUID productId, String sku, String name, long quantity, BigDecimal revenue) {}
+    public record ProductRank(UUID productId, String sku, String name, String currency,
+                              long quantity, BigDecimal revenue) {}
     public record Dashboard(LocalDate startDate, LocalDate endDate, String timezone, String defaultCurrency,
                             List<CurrencyMetrics> currencies, List<DailyTrend> dailyTrend,
                             List<ProductRank> topProducts, List<Breakdown> bySource,

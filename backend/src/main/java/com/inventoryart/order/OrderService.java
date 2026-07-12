@@ -25,8 +25,8 @@ public class OrderService {
     private final OrderRepository orders;private final OrderItemRepository items;private final ProductRepository products;private final InventoryService inventory;private final OrderRefundRepository refunds;private final OrderRefundItemRepository refundItems;private final PaymentRepository payments;
     public OrderService(OrderRepository orders,OrderItemRepository items,ProductRepository products,InventoryService inventory,OrderRefundRepository refunds,OrderRefundItemRepository refundItems,PaymentRepository payments){this.orders=orders;this.items=items;this.products=products;this.inventory=inventory;this.refunds=refunds;this.refundItems=refundItems;this.payments=payments;}
     @Transactional public OrderDtos.Response create(UUID tenant,UUID user,OrderDtos.Request request){
-        SalesOrder order=new SalesOrder(UUID.randomUUID(),tenant,number(),OrderSource.MANUAL,OrderStatus.DRAFT,AllocationStatus.FULLY_ALLOCATED,request.salesChannel(),request.eventName(),request.customerName(),request.customerEmail(),request.customerNote(),request.currency().toUpperCase(),request.paymentMethod(),request.paymentStatus(),request.orderDate(),user);
-        orders.save(order);List<OrderItem> built=buildItems(tenant,order.getId(),request);items.saveAll(built);setTotals(order,built);return response(order,built);
+        SalesOrder order=orders.save(new SalesOrder(UUID.randomUUID(),tenant,number(),OrderSource.MANUAL,OrderStatus.DRAFT,AllocationStatus.FULLY_ALLOCATED,request.salesChannel(),request.eventName(),request.customerName(),request.customerEmail(),request.customerNote(),request.currency().toUpperCase(),request.paymentMethod(),request.paymentStatus(),request.orderDate(),user));
+        List<OrderItem> built=buildItems(tenant,order.getId(),request);items.saveAll(built);setTotals(order,built);return response(order,built);
     }
     @Transactional public OrderDtos.Response update(UUID tenant,UUID user,UUID id,OrderDtos.Request request){
         SalesOrder order=orders.findLocked(id,tenant).orElseThrow(()->new NotFoundException("Order"));

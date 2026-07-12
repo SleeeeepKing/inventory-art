@@ -125,10 +125,10 @@ IMPORT_BATCH_SIZE=200
 IMPORT_MAX_ROWS=20000
 IMPORT_XLS_MAX_BYTES=5242880
 APP_SEED_ENABLED=false
-JAVA_TOOL_OPTIONS=-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+JAVA_TOOL_OPTIONS=-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=144m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
 ```
 
-Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 192 MB、Metaspace 最大 112 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 16 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 额外通过 `IMPORT_XLS_MAX_BYTES=5242880` 限制为 5 MB，避免 XLSX/CSV、Hibernate 批处理和并发请求同时把内存推到容器上限。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
+Railway 0.5 GB 实例必须保留这些保守上限：JVM 堆最大 192 MB、Metaspace 最大 144 MB、Serial GC、Hikari 最多 3 条连接、Tomcat 最多 16 个工作线程，以及单工作线程/4 个排队任务的有界异步执行器。144 MB 的 Metaspace 上限可容纳 Spring Boot、Hibernate、Flyway 和 springdoc 初始化后的类元数据，同时仍为 512 MB 容器预留线程栈、代码缓存、直接内存和本地库空间。导入每批最多 200 行且单文件最多 20,000 个数据行；旧版 XLS 额外通过 `IMPORT_XLS_MAX_BYTES=5242880` 限制为 5 MB，避免 XLSX/CSV、Hibernate 批处理和并发请求同时把内存推到容器上限。不要仅设置 `MaxRAMPercentage`，它没有为 Metaspace、线程栈、直接内存和本地库明确预留空间。
 
 首次创建管理员时，通过 Railway Secret 临时设置：
 

@@ -89,6 +89,64 @@ class DefaultSumUpImportCommitterIntegrationTest {
     }
 
     @Test
+    void rejectsMappedEuroProductFromUsdOrderAndProductSummaryWithoutInventorySideEffects() {
+        UUID tenant = UUID.randomUUID();
+        UUID actor = UUID.randomUUID();
+        UUID product = UUID.randomUUID();
+        insertTenantAndActor(tenant, actor);
+        jdbc.update("""
+            insert into products
+              (id, tenant_id, sku, name, sale_price, currency, current_stock, low_stock_threshold,
+               enabled, version, created_at, updated_at)
+            values (?, ?, 'EUR-ART', 'Euro print', 25.0000, 'EUR', 8, 1, true, 0, now(), now())
+            """, product, tenant);
+
+        UUID orderBatch = UUID.randomUUID();
+        insertBatch(tenant, actor, orderBatch, "ORDER_HISTORY");
+        insertCurrencyMismatchRow(tenant, orderBatch, product, "ORDER_HISTORY", "usd-order-1");
+
+        SumUpImportCommitter.Result orderResult = committer.confirm(
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, orderBatch, 1, true, true));
+
+        assertThat(orderResult.errorRows()).isEqualTo(1);
+        assertThat(orderResult.orderCount()).isZero();
+        assertThat(orderResult.inventoryMovementCount()).isZero();
+        assertThat(string("select processing_status from import_rows where import_batch_id = ?", orderBatch))
+            .isEqualTo("ERROR");
+        assertThat(integer("""
+            select count(*) from import_rows
+             where import_batch_id = ?
+               and validation_errors @> '["CURRENCY_MISMATCH"]'::jsonb
+            """, orderBatch)).isEqualTo(1);
+        assertThat(integer("select count(*) from orders where tenant_id = ? and import_batch_id = ?", tenant, orderBatch))
+            .isZero();
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(8);
+
+        UUID summaryBatch = UUID.randomUUID();
+        insertBatch(tenant, actor, summaryBatch, "PRODUCT_SALES");
+        insertCurrencyMismatchRow(tenant, summaryBatch, product, "PRODUCT_SALES", null);
+
+        SumUpImportCommitter.Result summaryResult = committer.confirm(
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, summaryBatch, 1, true, true));
+
+        assertThat(summaryResult.errorRows()).isEqualTo(1);
+        assertThat(summaryResult.orderCount()).isZero();
+        assertThat(summaryResult.inventoryMovementCount()).isZero();
+        assertThat(string("select processing_status from import_rows where import_batch_id = ?", summaryBatch))
+            .isEqualTo("ERROR");
+        assertThat(integer("""
+            select count(*) from import_rows
+             where import_batch_id = ?
+               and validation_errors @> '["CURRENCY_MISMATCH"]'::jsonb
+            """, summaryBatch)).isEqualTo(1);
+        assertThat(integer("select count(*) from imported_sales_summaries where import_batch_id = ?", summaryBatch))
+            .isZero();
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(8);
+        assertThat(integer("select count(*) from inventory_movements where tenant_id = ? and product_id = ?", tenant, product))
+            .isZero();
+    }
+
+    @Test
     void transactionHistoryCreatesAnUnallocatedOrderWithoutTouchingStock() {
         UUID tenant = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
@@ -275,6 +333,29 @@ class DefaultSumUpImportCommitterIntegrationTest {
             values (?, ?, ?, 1, 'ORDER_HISTORY', 'VALID', ?, ?,
                     cast(? as jsonb), '{}'::jsonb, '[]'::jsonb, ?, now())
             """, UUID.randomUUID(), tenant, batch, transactionId, fingerprint, normalized, product);
+    }
+
+    private void insertCurrencyMismatchRow(UUID tenant, UUID batch, UUID product, String rowType,
+                                           String transactionId) {
+        String normalized = transactionId == null
+            ? """
+                {"occurredAt":"2026-07-03T10:00:00Z","currency":"USD",
+                 "productName":"Euro print","sku":"EUR-ART","quantity":2,"grossRevenue":50}
+                """
+            : """
+                {"transactionId":"%s","transactionCode":"%s","status":"SUCCESSFUL","type":"SALE",
+                 "occurredAt":"2026-07-03T10:00:00Z","currency":"USD",
+                 "productName":"Euro print","sku":"EUR-ART","quantity":2,"unitPrice":25,"revenue":50}
+                """.formatted(transactionId, transactionId);
+        jdbc.update("""
+            insert into import_rows
+              (id, tenant_id, import_batch_id, row_number, row_type, processing_status,
+               external_transaction_id, fingerprint, normalized_data, sanitized_raw_data,
+               validation_errors, linked_product_id, created_at)
+            values (?, ?, ?, 1, ?, 'VALID', ?, ?, cast(? as jsonb), '{}'::jsonb,
+                    '[]'::jsonb, ?, now())
+            """, UUID.randomUUID(), tenant, batch, rowType, transactionId,
+            UUID.randomUUID().toString().replace("-", "").repeat(2), normalized, product);
     }
 
     private void insertTenantAndActor(UUID tenant, UUID actor) {

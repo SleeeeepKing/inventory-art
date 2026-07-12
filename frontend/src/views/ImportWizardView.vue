@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Document, Download, UploadFilled } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
 import { normalizePage } from '@/services/paging'
@@ -40,6 +40,7 @@ const { showError } = useApiFeedback()
 const { number } = useFormatters()
 const step = ref(0)
 const busy = ref(false)
+const uploadProgress = ref(0)
 const dragging = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const selectedFile = ref<File>()
@@ -48,6 +49,7 @@ const preview = ref<ImportPreview>({ analysisVersion: 0 })
 const products = ref<Product[]>([])
 const columnMappings = ref<Record<string, string>>({})
 const productMatches = ref<ProductMatch[]>([])
+const applySummaryInventory = ref(false)
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 
 const fieldOptions = computed(() => [
@@ -62,7 +64,12 @@ const fieldOptions = computed(() => [
   { value: 'quantity', label: t('import.quantity') },
   { value: 'feeAmount', label: t('import.fee') },
 ])
-const impact = computed(() => preview.value.impact || { orders: 0, transactions: 0, stockMovements: 0, errors: 0 })
+const isProductSummary = computed(() => batch.value?.importType === 'PRODUCT_SALES')
+const impact = computed(() => {
+  const previewImpact = preview.value.impact || { orders: 0, transactions: 0, stockMovements: 0, errors: 0 }
+  if (isProductSummary.value && !applySummaryInventory.value) return { ...previewImpact, stockMovements: 0 }
+  return previewImpact
+})
 
 function chooseFile() { fileInput.value?.click() }
 function assignFile(file?: File) {
@@ -73,6 +80,7 @@ function assignFile(file?: File) {
   selectedFile.value = file
 }
 function onDrop(event: DragEvent) { dragging.value = false; assignFile(event.dataTransfer?.files[0]) }
+function formatPreviewRow(row: Record<string, unknown>) { return JSON.stringify(row, null, 2) }
 
 async function fetchProducts() {
   const { data } = await api.get<PageResponse<Product> | Product[]>('/products', { params: { page: 0, size: 100, enabled: true } })
@@ -100,6 +108,7 @@ async function fetchPreview() {
     analysisVersion: data.batch.analysisVersion || 0,
     unmatchedProducts: [...matches.values()],
     impact: { orders: data.createsOrders ? data.estimatedNew : 0, transactions: data.estimatedNew, stockMovements: data.affectsInventory ? data.estimatedNew : 0, errors: data.errors },
+    sampleRows: data.rows.map((row) => row.normalized || {}),
   }
   productMatches.value = [...matches.values()]
 }
@@ -116,10 +125,11 @@ async function pollBatch(terminal: string[], onReady: () => Promise<void>) {
 async function uploadAndAnalyze() {
   if (!selectedFile.value) { ElMessage.warning(t('import.noFile')); return }
   busy.value = true
+  uploadProgress.value = 0
   try {
     const body = new FormData()
     body.append('file', selectedFile.value)
-    const { data } = await api.post<ImportBatch>('/imports/sumup/upload', body, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const { data } = await api.post<ImportBatch>('/imports/sumup/upload', body, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (event) => { uploadProgress.value = event.total ? Math.round((event.loaded / event.total) * 100) : 0 } })
     batch.value = data
     const { data: analysis } = await api.post<AnalyzeResponse>(`/imports/sumup/${data.id}/analyze`)
     batch.value = analysis.batch
@@ -165,9 +175,18 @@ async function saveProducts() {
 
 async function confirmImport() {
   if (!batch.value) return
+  if (isProductSummary.value && applySummaryInventory.value) {
+    try {
+      await ElMessageBox.confirm(t('import.summaryInventoryBody'), t('import.summaryInventoryTitle'), { confirmButtonText: t('import.applyInventory'), cancelButtonText: t('common.cancel'), type: 'warning' })
+    } catch (error) {
+      if (error === 'cancel' || error === 'close') return
+      showError(error)
+      return
+    }
+  }
   busy.value = true
   try {
-    await api.post(`/imports/sumup/${batch.value.id}/confirm`, { expectedAnalysisVersion: preview.value.analysisVersion, applyInventory: true, allowUnallocatedOrders: true })
+    await api.post(`/imports/sumup/${batch.value.id}/confirm`, { expectedAnalysisVersion: preview.value.analysisVersion, applyInventory: isProductSummary.value ? applySummaryInventory.value : true, allowUnallocatedOrders: true })
     await pollBatch(['COMPLETED', 'COMPLETED_WITH_ERRORS'], async () => { step.value = 4; busy.value = false })
   } catch (error) { busy.value = false; showError(error) }
 }
@@ -198,6 +217,7 @@ onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
           <UploadFilled /><strong>{{ t('import.dropTitle') }}</strong><span>{{ t('import.dropBody') }}</span><em>{{ t('import.chooseFile') }}</em>
         </button>
         <div v-if="selectedFile" class="selected-file"><Document /><span><small>{{ t('import.selectedFile') }}</small><strong>{{ selectedFile.name }}</strong></span><b>{{ (selectedFile.size / 1024).toFixed(1) }} KB</b></div>
+        <ElProgress v-if="busy && uploadProgress" class="upload-progress" :percentage="uploadProgress" :stroke-width="8" />
         <div class="wizard-actions"><ElButton @click="router.push('/imports')">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="busy" @click="uploadAndAnalyze">{{ busy ? t('import.analyzing') : t('import.uploadAndAnalyze') }}</ElButton></div>
       </div>
 
@@ -224,13 +244,15 @@ onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
       <div v-else-if="step === 3" class="wizard-stage">
         <div class="stage-heading"><h2>{{ t('import.impactTitle') }}</h2><p>{{ t('import.reviewWarning') }}</p></div>
         <div class="impact-grid"><div><span>{{ t('import.impactOrders') }}</span><strong>{{ number(impact.orders) }}</strong></div><div><span>{{ t('import.impactTransactions') }}</span><strong>{{ number(impact.transactions) }}</strong></div><div><span>{{ t('import.impactStock') }}</span><strong>{{ number(impact.stockMovements) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(impact.errors) }}</strong></div></div>
+        <ElTable v-if="preview.sampleRows?.length" class="preview-table" :data="preview.sampleRows" max-height="360"><ElTableColumn type="index" width="58" :label="t('import.row')" /><ElTableColumn :label="t('import.normalizedPreview')"><template #default="scope"><pre class="preview-json">{{ formatPreviewRow(scope.row) }}</pre></template></ElTableColumn></ElTable>
+        <ElCheckbox v-if="isProductSummary" v-model="applySummaryInventory" class="summary-inventory-choice">{{ t('import.applySummaryInventory') }}</ElCheckbox>
         <ElAlert :title="t('import.reviewWarning')" type="warning" show-icon :closable="false" />
         <div class="wizard-actions"><ElButton @click="step = 2">{{ t('common.back') }}</ElButton><ElButton type="primary" :loading="busy" @click="confirmImport">{{ busy ? t('import.importing') : t('import.confirmImport') }}</ElButton></div>
       </div>
 
       <div v-else class="wizard-stage result-stage">
         <div class="result-mark"><Check /></div><h2>{{ t('import.completedTitle') }}</h2><p>{{ t('import.completedBody', { count: batch?.importedRows || 0 }) }}</p><StatusPill v-if="batch" :status="batch.status" />
-        <div class="impact-grid"><div><span>{{ t('import.rows') }}</span><strong>{{ number(batch?.importedRows) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(batch?.errorRows) }}</strong></div></div>
+        <div class="impact-grid"><div><span>{{ t('import.importedRows') }}</span><strong>{{ number(batch?.importedRows) }}</strong></div><div><span>{{ t('import.updatedRows') }}</span><strong>{{ number(batch?.updatedRows) }}</strong></div><div><span>{{ t('import.duplicateRows') }}</span><strong>{{ number(batch?.duplicateRows) }}</strong></div><div><span>{{ t('import.skippedRows') }}</span><strong>{{ number(batch?.skippedRows) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(batch?.errorRows) }}</strong></div></div>
         <div class="wizard-actions wizard-actions--center"><ElButton v-if="batch?.errorRows" :icon="Download" @click="downloadErrors">{{ t('import.downloadErrors') }}</ElButton><ElButton type="primary" @click="router.push('/imports')">{{ t('import.viewImports') }}</ElButton></div>
       </div>
     </section>

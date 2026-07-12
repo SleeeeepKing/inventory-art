@@ -3,7 +3,7 @@ FROM maven:3.9.11-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml .
 COPY src src
-RUN --mount=type=cache,target=/root/.m2 \
+RUN --mount=type=cache,id=inventory-art-maven,target=/root/.m2 \
     mvn -B -ntp -DskipTests package
 
 FROM eclipse-temurin:21-jre
@@ -14,5 +14,5 @@ COPY --from=build /workspace/target/*.jar app.jar
 USER app
 EXPOSE 8080
 ENV MALLOC_ARENA_MAX=2
-ENV JAVA_TOOL_OPTIONS="-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_TOOL_OPTIONS="-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=144m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
