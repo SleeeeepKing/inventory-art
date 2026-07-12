@@ -61,6 +61,9 @@ export interface Product {
   imageUrl?: string
   category?: string
   artistName?: string
+  totalUnitsSold?: number
+  totalSalesRevenue?: number
+  lastSaleAt?: string
   version?: number
   createdAt?: string
   updatedAt?: string
@@ -127,6 +130,9 @@ export interface ImportBatch {
   totalRows?: number
   validRows?: number
   importedRows?: number
+  updatedRows?: number
+  duplicateRows?: number
+  skippedRows?: number
   errorRows?: number
   analysisVersion?: number
   createdAt: string
@@ -138,13 +144,26 @@ export interface ImportBatch {
 export interface ReportSummary {
   currency: string
   revenue: number
+  grossSales: number
+  discounts: number
+  refunds: number
+  fees: number
+  afterFees: number
+  productCost: number
   orders: number
   unitsSold: number
   grossProfit: number
+  averageOrderValue: number
+  successfulPayments: number
   pendingAllocation: number
+  importErrors: number
+  lowStockProducts: number
   dailySales: Array<{ date: string; revenue: number; orders: number }>
   topProducts: Array<{ name: string; sku?: string; quantity: number; revenue: number }>
   sources?: Array<{ name: string; value: number }>
+  channels?: Array<{ name: string; value: number }>
+  paymentMethods?: Array<{ name: string; value: number }>
+  events?: Array<{ name: string; value: number }>
 }
 
 export interface AdminTenant {

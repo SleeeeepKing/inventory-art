@@ -207,7 +207,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
             List<Row> group = entry.getValue();
             Row representative = group.getFirst();
             try {
-                ensureSingleCurrency(group);
+                String orderCurrency = singleCurrency(group, defaults.currency());
                 ExternalUpsert external = upsertExternal(command, batch, defaults, representative);
                 if (external.linkedOrderId() != null && external.active()
                     && isRefundUpdate(representative.normalized())) {
@@ -224,7 +224,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                     continue;
                 }
 
-                List<Line> lines = orderLines(command.tenantId(), group);
+                List<Line> lines = orderLines(command.tenantId(), group, orderCurrency);
                 boolean fullyMapped = lines.stream().allMatch(line -> line.product() != null);
                 Map<UUID, Integer> quantities = quantities(lines);
                 boolean inventoryCanBeApplied = command.applyInventory() && fullyMapped
@@ -236,7 +236,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                     continue;
                 }
 
-                UUID orderId = createProductOrder(command, defaults, entry.getKey(), representative, lines,
+                UUID orderId = createProductOrder(command, entry.getKey(), representative, orderCurrency, lines,
                     inventoryCanBeApplied);
                 insertOrderItems(command.tenantId(), orderId, lines);
                 if (inventoryCanBeApplied) {
@@ -255,16 +255,21 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
     }
 
     private void confirmProductSummary(ConfirmCommand command, Batch batch, TenantDefaults defaults, List<Row> rows) {
+        Map<UUID, ProductSnapshot> products = products(command.tenantId(), rows);
         List<Row> summaryRows = new ArrayList<>(rows.size());
         for (Row row : rows) {
             try {
                 positiveQuantity(row);
+                ProductSnapshot product = row.linkedProductId() == null ? null : products.get(row.linkedProductId());
+                if (product != null && !product.currency().equalsIgnoreCase(
+                    currency(row.normalized(), defaults.currency()))) {
+                    throw new RowProblem("CURRENCY_MISMATCH");
+                }
                 summaryRows.add(row);
             } catch (RowProblem problem) {
                 mark(row, ImportRowStatus.ERROR, null, problem.code());
             }
         }
-        Map<UUID, ProductSnapshot> products = products(command.tenantId(), rows);
         Map<UUID, Integer> quantities = new TreeMap<>();
         boolean applyEligible = command.applyInventory();
         for (Row row : summaryRows) {
@@ -421,8 +426,8 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         return orderId;
     }
 
-    private UUID createProductOrder(ConfirmCommand command, TenantDefaults defaults, String groupKey,
-                                    Row representative, List<Line> lines, boolean inventoryApplied) {
+    private UUID createProductOrder(ConfirmCommand command, String groupKey, Row representative,
+                                    String orderCurrency, List<Line> lines, boolean inventoryApplied) {
         BigDecimal subtotal = lines.stream().map(Line::subtotal).reduce(ZERO, BigDecimal::add);
         BigDecimal discount = lines.stream().map(Line::discount).reduce(ZERO, BigDecimal::add);
         BigDecimal tax = lines.stream().map(Line::tax).reduce(ZERO, BigDecimal::add);
@@ -430,7 +435,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         UUID orderId = UUID.randomUUID();
         insertOrder(orderId, command, orderNumber(command.batchId(), groupKey),
             text(representative.normalized(), "transactionId", 200),
-            currency(representative.normalized(), defaults.currency()),
+            orderCurrency,
             money(subtotal), money(discount), money(tax), money(total),
             inventoryApplied ? ZERO : money(total), inventoryApplied,
             instant(representative.normalized(), "occurredAt").orElseGet(DefaultSumUpImportCommitter::now));
@@ -635,12 +640,15 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         return count != null && count > 0;
     }
 
-    private List<Line> orderLines(UUID tenantId, List<Row> group) {
+    private List<Line> orderLines(UUID tenantId, List<Row> group, String orderCurrency) {
         Map<UUID, ProductSnapshot> products = products(tenantId, group);
         List<Line> result = new ArrayList<>(group.size());
         for (Row row : group) {
             int quantity = positiveQuantity(row);
             ProductSnapshot product = row.linkedProductId() == null ? null : products.get(row.linkedProductId());
+            if (product != null && !product.currency().equalsIgnoreCase(orderCurrency)) {
+                throw new RowProblem("CURRENCY_MISMATCH");
+            }
             BigDecimal explicitTotal = nullableAmount(row.normalized(), "revenue", "grossRevenue", "amount", "netRevenue");
             BigDecimal unit = nullableAmount(row.normalized(), "unitPrice");
             if (unit == null) {
@@ -683,13 +691,13 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         Map<UUID, ProductSnapshot> result = new LinkedHashMap<>();
         for (UUID id : ids.stream().sorted().toList()) {
             jdbc.query("""
-                select id, sku, name, sale_price, current_stock from products
+                select id, sku, name, sale_price, currency, current_stock from products
                  where tenant_id = ? and id = ?
                 """, rs -> {
                     if (rs.next()) {
                         ProductSnapshot product = new ProductSnapshot((UUID) rs.getObject("id"),
                             rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("sale_price"),
-                            rs.getInt("current_stock"));
+                            rs.getString("currency"), rs.getInt("current_stock"));
                         result.put(product.id(), product);
                     }
                     return null;
@@ -727,13 +735,13 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         }
     }
 
-    private void ensureSingleCurrency(List<Row> group) {
+    private String singleCurrency(List<Row> group, String defaultCurrency) {
         Set<String> currencies = new LinkedHashSet<>();
         for (Row row : group) {
-            String value = text(row.normalized(), "currency", 3);
-            if (value != null) currencies.add(value.toUpperCase(Locale.ROOT));
+            currencies.add(currency(row.normalized(), defaultCurrency));
         }
         if (currencies.size() > 1) throw new RowProblem("MIXED_ORDER_CURRENCIES");
+        return currencies.iterator().next();
     }
 
     private void linkExternalOrder(UUID externalId, UUID tenantId, UUID orderId) {
@@ -1073,7 +1081,8 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
 
     private record RefundAllocation(UUID itemId, UUID productId, int quantity, BigDecimal amount) {}
 
-    private record ProductSnapshot(UUID id, String sku, String name, BigDecimal salePrice, int stock) {}
+    private record ProductSnapshot(UUID id, String sku, String name, BigDecimal salePrice,
+                                   String currency, int stock) {}
 
     private record Line(Row row, ProductSnapshot product, String sku, String name, BigDecimal unitPrice,
                         int quantity, BigDecimal discount, BigDecimal tax, BigDecimal subtotal,

@@ -14,5 +14,5 @@ COPY --from=build /workspace/target/*.jar app.jar
 USER app
 EXPOSE 8080
 ENV MALLOC_ARENA_MAX=2
-ENV JAVA_TOOL_OPTIONS="-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_TOOL_OPTIONS="-Xms48m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=144m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

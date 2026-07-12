@@ -3,6 +3,10 @@ import { en } from './locales/en'
 import { zhCN } from './locales/zh-CN'
 import { frFR } from './locales/fr-FR'
 import { i18n, isSupportedLocale, setAppLocale } from './index'
+import { elementLocaleFor } from './elementLocale'
+import elementEn from 'element-plus/es/locale/lang/en'
+import elementFr from 'element-plus/es/locale/lang/fr'
+import elementZhCn from 'element-plus/es/locale/lang/zh-cn'
 
 function flatten(value: Record<string, unknown>, prefix = ''): string[] {
   return Object.entries(value).flatMap(([key, child]) => {
@@ -36,5 +40,12 @@ describe('i18n catalogue', () => {
     expect(i18n.global.locale.value).toBe('fr-FR')
     expect(document.documentElement.lang).toBe('fr-FR')
     setAppLocale('en')
+  })
+
+  it('selects the matching Element Plus locale with English fallback', () => {
+    expect(elementLocaleFor('en')).toBe(elementEn)
+    expect(elementLocaleFor('zh-CN')).toBe(elementZhCn)
+    expect(elementLocaleFor('fr-FR')).toBe(elementFr)
+    expect(elementLocaleFor('de')).toBe(elementEn)
   })
 })

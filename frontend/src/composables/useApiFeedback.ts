@@ -8,7 +8,9 @@ const errorKeys: Record<string, string> = {
   VALIDATION_ERROR: 'errors.validation',
   DUPLICATE_SKU: 'errors.duplicateSku',
   INSUFFICIENT_STOCK: 'errors.insufficientStock',
+  CURRENCY_MISMATCH: 'errors.currencyMismatch',
   INVALID_LOCALE: 'errors.invalidLocale',
+  UNSUPPORTED_LOCALE: 'errors.invalidLocale',
   OPTIMISTIC_LOCK_CONFLICT: 'errors.conflict',
   DUPLICATE_IMPORT_FILE: 'import.duplicate',
 }

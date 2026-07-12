@@ -14,7 +14,7 @@ import EmptyState from '@/components/EmptyState.vue'
 
 const { t } = useI18n()
 const { showError } = useApiFeedback()
-const { money, number } = useFormatters()
+const { money, number, date } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const dialogOpen = ref(false)
@@ -116,6 +116,7 @@ onMounted(load)
         <ElTableColumn prop="name" :label="t('products.productName')" min-width="220" />
         <ElTableColumn :label="t('products.price')" align="right" min-width="130"><template #default="scope">{{ money(scope.row.salePrice, scope.row.currency) }}</template></ElTableColumn>
         <ElTableColumn :label="t('products.stock')" align="right" min-width="110"><template #default="scope"><strong :class="{ 'stock-low': scope.row.currentStock <= (scope.row.lowStockThreshold || 0) }">{{ number(scope.row.currentStock) }}</strong></template></ElTableColumn>
+        <ElTableColumn :label="t('products.salesHistory')" min-width="190"><template #default="scope"><div class="cell-stack"><strong>{{ t('products.unitsSoldValue', { count: number(scope.row.totalUnitsSold || 0) }) }}</strong><small>{{ money(scope.row.totalSalesRevenue || 0, scope.row.currency) }} · {{ scope.row.lastSaleAt ? date(scope.row.lastSaleAt) : t('products.neverSold') }}</small></div></template></ElTableColumn>
         <ElTableColumn :label="t('products.activity')" min-width="110"><template #default="scope"><span class="availability" :data-active="scope.row.enabled"><i />{{ t(scope.row.enabled ? 'common.active' : 'common.inactive') }}</span></template></ElTableColumn>
         <ElTableColumn :label="t('common.actions')" width="112" fixed="right"><template #default="scope"><ElButton text :icon="Edit" :aria-label="t('common.edit')" @click="openEdit(scope.row)" /><ElButton text type="danger" :icon="Delete" :aria-label="t('common.delete')" @click="remove(scope.row)" /></template></ElTableColumn>
       </ElTable>

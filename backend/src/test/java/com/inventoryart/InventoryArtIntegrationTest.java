@@ -54,6 +54,25 @@ class InventoryArtIntegrationTest {
         assertThat(users.findById(f.user.getId()).orElseThrow().getPreferredLocale()).isEqualTo("fr-FR");
     }
 
+    @Test void localeValidationIsolationAndAdminDefaultAreEnforced() throws Exception {
+        Fixture first=fixture("locale-first"),second=fixture("locale-second");
+        mvc.perform(patch("/api/v1/profile").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"displayName\":\"First\",\"preferredLocale\":\"zh-CN\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.preferredLocale").value("zh-CN"));
+        mvc.perform(get("/api/v1/profile").with(userJwt(second)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.preferredLocale").value("en"));
+        mvc.perform(patch("/api/v1/profile").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"displayName\":\"First\",\"preferredLocale\":\"de\"}"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("UNSUPPORTED_LOCALE"));
+
+        User admin=users.save(new User(UUID.randomUUID(),null,"locale-admin-"+UUID.randomUUID(),"locale-admin-"+UUID.randomUUID()+"@test.local",passwords.encode("ValidPassword123!"),"Admin",UserRole.ADMIN));
+        String nonce=UUID.randomUUID().toString().substring(0,8);
+        String create=json.writeValueAsString(Map.of("tenantId",first.tenant.getId(),"username","friend-"+nonce,
+            "email","friend-"+nonce+"@example.test","password","AnotherValid123!","displayName","Friend","role","USER"));
+        mvc.perform(post("/api/v1/admin/users").with(adminJwt(admin)).contentType(MediaType.APPLICATION_JSON).content(create))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.preferredLocale").value("en"));
+    }
+
     @Test void tenantResourcesAreNotDiscoverableAcrossUsers() throws Exception {
         Fixture a=fixture("tenant-a"),b=fixture("tenant-b");Product other=product(b,"OTHER-1",5);
         mvc.perform(get("/api/v1/products/{id}",other.getId()).with(userJwt(a))).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -133,6 +152,36 @@ class InventoryArtIntegrationTest {
         Future<Boolean> first=pool.submit(decrement),second=pool.submit(decrement);assertThat(ready.await(5,TimeUnit.SECONDS)).isTrue();start.countDown();
         try{assertThat(List.of(first.get(10,TimeUnit.SECONDS),second.get(10,TimeUnit.SECONDS))).containsExactlyInAnyOrder(true,false);}finally{pool.shutdownNow();}
         assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isZero();
+    }
+
+    @Test void reportAndProductAggregatesRespectRefundedUnitsAndProductCost() throws Exception {
+        Fixture f=fixture("report-cost");Product p=product(f,"REPORT-COST",10);
+        OrderDtos.Request request=new OrderDtos.Request(
+            List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),
+            SalesChannel.EXHIBITION,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+        var draft=orderService.create(f.tenant.getId(),f.user.getId(),request);
+        var confirmed=orderService.confirm(f.tenant.getId(),f.user.getId(),draft.id());
+        orderService.refund(f.tenant.getId(),f.user.getId(),draft.id(),
+            new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
+
+        mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.currencies[0].currency").value("EUR"))
+            .andExpect(jsonPath("$.currencies[0].grossSales").value(30.0))
+            .andExpect(jsonPath("$.currencies[0].refunds").value(10.0))
+            .andExpect(jsonPath("$.currencies[0].netSales").value(20.0))
+            .andExpect(jsonPath("$.currencies[0].productCost").value(4.0))
+            .andExpect(jsonPath("$.currencies[0].estimatedGrossProfit").value(16.0))
+            .andExpect(jsonPath("$.currencies[0].unitsSold").value(2))
+            .andExpect(jsonPath("$.topProducts[0].currency").value("EUR"))
+            .andExpect(jsonPath("$.topProducts[0].quantity").value(2))
+            .andExpect(jsonPath("$.topProducts[0].revenue").value(20.0));
+
+        mvc.perform(get("/api/v1/products/{id}",p.getId()).with(userJwt(f)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalUnitsSold").value(2))
+            .andExpect(jsonPath("$.totalSalesRevenue").value(20.0))
+            .andExpect(jsonPath("$.lastSaleAt").isString());
     }
 
     private Fixture fixture(String prefix){String nonce=UUID.randomUUID().toString().substring(0,8);Tenant t=tenants.save(new Tenant(UUID.randomUUID(),prefix+nonce,prefix+"-"+nonce,"EUR","Europe/Paris","zh-CN"));User u=users.save(new User(UUID.randomUUID(),t.getId(),prefix+nonce,prefix+nonce+"@test.local",passwords.encode("ValidPassword123!"),prefix,UserRole.USER));return new Fixture(t,u);}

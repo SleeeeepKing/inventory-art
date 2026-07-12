@@ -286,7 +286,7 @@ public class SumUpImportService {
             Math.max(0, batch.getValidRows() - duplicateCount), duplicateCount, batch.getErrorRows(),
             needsMapping == null ? 0 : needsMapping,
             type == ImportType.TRANSACTION_HISTORY || type == ImportType.ORDER_HISTORY,
-            type == ImportType.ORDER_HISTORY,
+            type == ImportType.ORDER_HISTORY || type == ImportType.PRODUCT_SALES,
             type == ImportType.TRANSACTION_HISTORY || type == ImportType.ACCOUNTING_REPORT);
     }
 

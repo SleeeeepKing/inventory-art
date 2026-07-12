@@ -63,6 +63,9 @@ public class ReportService {
             select currency, coalesce(sum(gross_amount),0) gross, coalesce(sum(discount_amount),0) discounts,
                    coalesce(sum(refund_amount),0) refunds, coalesce(sum(net_amount),0) net,
                    coalesce(sum(fee_amount),0) fees, coalesce(sum(net_amount-fee_amount),0) after_fees,
+                   coalesce(sum(cost_amount),0) product_cost,
+                   coalesce(sum(net_amount-cost_amount),0) gross_profit,
+                   coalesce(sum(unit_count),0) units,
                    coalesce(sum(order_count),0) orders, coalesce(sum(payment_count),0) payments
             from included_sales group by currency order by currency
             """, params, (rs, row) -> {
@@ -70,7 +73,8 @@ public class ReportService {
                 long orders = rs.getLong("orders");
                 return new ReportDtos.CurrencyMetrics(rs.getString("currency"), rs.getBigDecimal("gross"),
                     rs.getBigDecimal("discounts"), rs.getBigDecimal("refunds"), net, rs.getBigDecimal("fees"),
-                    rs.getBigDecimal("after_fees"), orders, rs.getLong("payments"),
+                    rs.getBigDecimal("after_fees"), rs.getBigDecimal("product_cost"),
+                    rs.getBigDecimal("gross_profit"), rs.getLong("units"), orders, rs.getLong("payments"),
                     orders == 0 ? BigDecimal.ZERO : net.divide(BigDecimal.valueOf(orders), 4, java.math.RoundingMode.HALF_UP));
             });
         List<ReportDtos.DailyTrend> trends = jdbc.query(ReportSourcePolicy.INCLUDED_SALES_CTE + """
@@ -81,15 +85,25 @@ public class ReportService {
             rs.getString("currency"), rs.getBigDecimal("net"), rs.getBigDecimal("fees"), rs.getLong("orders")));
 
         List<ReportDtos.ProductRank> topProducts = jdbc.query("""
-            select p.id, p.sku, p.name, coalesce(sum(oi.quantity - oi.refunded_quantity),0) quantity,
-                   coalesce(sum(oi.line_total),0) revenue
-            from order_items oi join orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id
-            join products p on p.tenant_id=oi.tenant_id and p.id=oi.product_id
-            where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid)) and o.order_date>=:from and o.order_date<:to
-              and o.status in ('CONFIRMED','COMPLETED','PARTIALLY_REFUNDED','REFUNDED')
-            group by p.id,p.sku,p.name order by quantity desc, revenue desc limit 10
+            with product_sales as (
+              select p.id, p.sku, p.name, o.currency,
+                     coalesce(sum(oi.quantity - oi.refunded_quantity),0)::bigint quantity,
+                     coalesce(sum(oi.line_total * (oi.quantity - oi.refunded_quantity) / oi.quantity),0) revenue
+                from order_items oi
+                join orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id
+                join products p on p.tenant_id=oi.tenant_id and p.id=oi.product_id
+               where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid))
+                 and o.order_date>=:from and o.order_date<:to
+                 and upper(o.currency)=upper(p.currency)
+                 and o.status in ('CONFIRMED','COMPLETED','PARTIALLY_REFUNDED','REFUNDED')
+               group by p.id,p.sku,p.name,o.currency
+            ), ranked as (
+              select *, row_number() over (partition by currency order by quantity desc, revenue desc, name) rank
+                from product_sales
+            )
+            select id,sku,name,currency,quantity,revenue from ranked where rank<=10 order by currency,rank
             """, params, (rs, row) -> new ReportDtos.ProductRank(rs.getObject("id", UUID.class), rs.getString("sku"),
-            rs.getString("name"), rs.getLong("quantity"), rs.getBigDecimal("revenue")));
+            rs.getString("name"), rs.getString("currency"), rs.getLong("quantity"), rs.getBigDecimal("revenue")));
 
         long lowStock = scalar("select count(*) from products where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and enabled=true and current_stock<=low_stock_threshold", params);
         long unallocated = scalar("select count(*) from orders where (:tenantId is null or tenant_id=cast(:tenantId as uuid)) and allocation_status<>'FULLY_ALLOCATED' and status<>'CANCELLED'", params);
