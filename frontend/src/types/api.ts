@@ -107,12 +107,12 @@ export interface Order {
   salesChannel?: string
   eventId?: string
   eventName?: string
-  inventoryApplied?: boolean
   customerName?: string
   customerEmail?: string
   currency: string
   subtotal: number
   taxAmount?: number
+  refundAmount?: number
   totalAmount: number
   notes?: string
   customerNote?: string

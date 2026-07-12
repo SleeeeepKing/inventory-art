@@ -207,7 +207,10 @@ body.nav-open { overflow: hidden; }
 .order-lines b { text-align: right; }
 .order-editor { margin-bottom: 18px; border: 1px solid var(--ink-150); border-radius: 10px; }
 .order-editor__heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--ink-100); background: var(--paper); }
-.order-item-row { display: grid; grid-template-columns: minmax(190px, 1fr) 105px 130px 110px 35px; align-items: center; gap: 8px; padding: 11px 12px; border-bottom: 1px solid var(--ink-100); }
+.order-editor__heading > span { display: flex; align-items: baseline; gap: 8px; }
+.order-editor__heading small { color: var(--ink-500); }
+.order-editor__empty { margin: 0; padding: 18px 14px; color: var(--ink-500); border-bottom: 1px solid var(--ink-100); }
+.order-item-row { display: grid; grid-template-columns: minmax(190px, 1fr) 105px 35px; align-items: center; gap: 8px; padding: 11px 12px; border-bottom: 1px solid var(--ink-100); }
 .order-item-row > strong { text-align: right; }
 .order-total { display: flex; justify-content: end; gap: 30px; padding: 14px; }
 .order-total strong { min-width: 110px; color: var(--coral-dark); font-size: 18px; text-align: right; }
@@ -246,7 +249,6 @@ body.nav-open { overflow: hidden; }
 .upload-progress { margin-top: 16px; }
 .preview-table { margin: 18px 0; }
 .preview-json { max-height: 132px; margin: 0; overflow: auto; color: var(--ink-700); font: 10px/1.5 var(--utility); white-space: pre-wrap; word-break: break-word; }
-.summary-inventory-choice { min-height: 48px; margin-bottom: 14px; padding: 10px 13px; border: 1px solid var(--amber); border-radius: 9px; background: #fffaf0; }
 .stage-heading { margin-bottom: 20px; }
 .stage-heading h2 { margin: 0 0 7px; font-size: 24px; letter-spacing: -.03em; }
 .stage-heading p { margin: 0; color: var(--ink-500); }
@@ -321,7 +323,7 @@ body.nav-open { overflow: hidden; }
   .login-page { grid-template-columns: 1fr; }
   .login-story { display: none; }
   .login-panel { min-height: 100vh; }
-  .order-item-row { grid-template-columns: 1fr 100px 120px; }
+  .order-item-row { grid-template-columns: 1fr 100px 44px; }
   .order-item-row > strong { grid-column: 2; }
   .settings-grid { grid-template-columns: 1fr; }
   .language-card { grid-row: auto; }

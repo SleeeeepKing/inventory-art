@@ -126,7 +126,7 @@ class InventoryArtIntegrationTest {
 
         String order=json.writeValueAsString(Map.of(
             "items",List.of(Map.of("productId",product.getId(),"quantity",1,"unitPrice",10,"discountAmount",0,"taxRate",0)),
-            "salesChannel","EXHIBITION","eventId",eventId,"currency","EUR",
+            "totalAmount",10,"salesChannel","EXHIBITION","eventId",eventId,"currency","EUR",
             "paymentMethod","CARD","paymentStatus","PAID","orderDate",Instant.now().toString()));
         mvc.perform(post("/api/v1/orders").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(order))
             .andExpect(status().isCreated())
@@ -160,27 +160,39 @@ class InventoryArtIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.timezone").value("Europe/Paris"));
     }
 
-    @Test void orderConfirmationCancellationAndRefundAreInventorySafe() {
+    @Test void orderLifecycleNeverChangesInventory() {
         Fixture f=fixture("orders");Product p=product(f,"SKU-ORDER",10);
-        OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.ONLINE,null,null,"Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+        OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),new BigDecimal("30.00"),SalesChannel.ONLINE,null,null,"Customer",null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
         var confirmed=orderService.create(f.tenant.getId(),f.user.getId(),req);
         assertThat(confirmed.status()).isEqualTo("CONFIRMED");
-        assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
+        assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
         assertThat(payments.existsByTenantIdAndOrderId(f.tenant.getId(),confirmed.id())).isTrue();
         assertThatThrownBy(()->orderService.confirm(f.tenant.getId(),f.user.getId(),confirmed.id())).hasMessageContaining("already");
-        var refund=orderService.refund(f.tenant.getId(),f.user.getId(),confirmed.id(),new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
-        assertThat(refund.status()).isEqualTo("PARTIALLY_REFUNDED");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+        var refund=orderService.refund(f.tenant.getId(),f.user.getId(),confirmed.id(),new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),null,"Returned"));
+        assertThat(refund.status()).isEqualTo("PARTIALLY_REFUNDED");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
     }
 
-    @Test void insufficientStockRollsBackOrderCreation() {
-        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
-        assertThatThrownBy(()->orderService.create(f.tenant.getId(),f.user.getId(),req)).hasMessageContaining("Insufficient");assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);assertThat(orders.existsByTenantId(f.tenant.getId())).isFalse();
+    @Test void amountOnlyOrderCanBeCreatedAndRefunded() {
+        Fixture f=fixture("amount-only");
+        OrderDtos.Request request=new OrderDtos.Request(List.of(),new BigDecimal("42.50"),SalesChannel.EXHIBITION,null,"Art fair",null,null,null,"EUR",PaymentMethod.OTHER,PaymentStatus.PAID,Instant.now());
+        var created=orderService.create(f.tenant.getId(),f.user.getId(),request);
+        assertThat(created.status()).isEqualTo("CONFIRMED");
+        assertThat(created.totalAmount()).isEqualByComparingTo("42.5000");
+        assertThat(created.items()).isEmpty();
+        var refunded=orderService.refund(f.tenant.getId(),f.user.getId(),created.id(),new OrderDtos.RefundRequest(List.of(),new BigDecimal("42.50"),"Customer refund"));
+        assertThat(refunded.status()).isEqualTo("REFUNDED");
+        assertThat(refunded.refundAmount()).isEqualByComparingTo("42.5000");
+    }
+
+    @Test void orderCreationDoesNotRequireAvailableStock() {
+        Fixture f=fixture("stock");Product p=product(f,"LOW-1",1);OrderDtos.Request req=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(p.getId(),2,null,BigDecimal.ZERO,BigDecimal.ZERO)),new BigDecimal("20.00"),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
+        orderService.create(f.tenant.getId(),f.user.getId(),req);assertThat(products.findById(p.getId()).orElseThrow().getCurrentStock()).isEqualTo(1);assertThat(orders.existsByTenantId(f.tenant.getId())).isTrue();
     }
 
     @Test void batchOrderActionsPartiallySucceedAndRemainTenantScoped() throws Exception {
         Fixture first=fixture("batch-first"),second=fixture("batch-second");Product firstProduct=product(first,"BATCH",10),secondProduct=product(second,"OTHER-BATCH",5);
         SalesOrder legacyDraft=draft(first,firstProduct,2);
-        OrderDtos.Request otherRequest=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(secondProduct.getId(),1,null,BigDecimal.ZERO,BigDecimal.ZERO)),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
+        OrderDtos.Request otherRequest=new OrderDtos.Request(List.of(new OrderDtos.ItemRequest(secondProduct.getId(),1,null,BigDecimal.ZERO,BigDecimal.ZERO)),new BigDecimal("10.00"),SalesChannel.OTHER,null,null,null,null,null,"EUR",PaymentMethod.CASH,PaymentStatus.PAID,Instant.now());
         var otherOrder=orderService.create(second.tenant.getId(),second.user.getId(),otherRequest);
 
         UUID missing=UUID.randomUUID();
@@ -191,7 +203,7 @@ class InventoryArtIntegrationTest {
             .andExpect(jsonPath("$.succeeded[0].id").value(legacyDraft.getId().toString()))
             .andExpect(jsonPath("$.failed.length()").value(1))
             .andExpect(jsonPath("$.failed[0].code").value("RESOURCE_NOT_FOUND"));
-        assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+        assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
 
         String cancel=json.writeValueAsString(Map.of("orderIds",List.of(legacyDraft.getId(),otherOrder.id())));
         mvc.perform(post("/api/v1/orders/batch-cancel").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON).content(cancel))
@@ -200,7 +212,7 @@ class InventoryArtIntegrationTest {
             .andExpect(jsonPath("$.failed.length()").value(1))
             .andExpect(jsonPath("$.failed[0].code").value("RESOURCE_NOT_FOUND"));
         assertThat(products.findById(firstProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
-        assertThat(products.findById(secondProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(4);
+        assertThat(products.findById(secondProduct.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
     }
 
     @Test void productImagePresignUploadAndConfirmBindsThePrivateObject() throws Exception {
@@ -250,10 +262,10 @@ class InventoryArtIntegrationTest {
         Fixture f=fixture("report-cost");Product p=product(f,"REPORT-COST",10);
         OrderDtos.Request request=new OrderDtos.Request(
             List.of(new OrderDtos.ItemRequest(p.getId(),3,null,BigDecimal.ZERO,BigDecimal.ZERO)),
-            SalesChannel.EXHIBITION,null,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
+            new BigDecimal("30.00"),SalesChannel.EXHIBITION,null,"Summer fair",null,null,null,"EUR",PaymentMethod.CARD,PaymentStatus.PAID,Instant.now());
         var confirmed=orderService.create(f.tenant.getId(),f.user.getId(),request);
         orderService.refund(f.tenant.getId(),f.user.getId(),confirmed.id(),
-            new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),"Returned"));
+            new OrderDtos.RefundRequest(List.of(new OrderDtos.RefundLine(confirmed.items().getFirst().id(),1)),null,"Returned"));
 
         mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
             .andExpect(status().isOk())

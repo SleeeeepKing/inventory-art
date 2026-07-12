@@ -37,7 +37,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void commitsMappedOrderAndReversesItsInventoryAndFinancialRecords() {
+    void commitsAndReversesMappedOrderWithoutChangingInventory() {
         UUID tenant = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
         UUID product = UUID.randomUUID();
@@ -65,12 +65,12 @@ class DefaultSumUpImportCommitterIntegrationTest {
                 """, product);
 
         SumUpImportCommitter.Result confirmed = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, batch, 1, true, true));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, batch, 1));
 
         assertThat(confirmed.importedRows()).isEqualTo(1);
         assertThat(confirmed.orderCount()).isEqualTo(1);
-        assertThat(confirmed.inventoryMovementCount()).isEqualTo(1);
-        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(3);
+        assertThat(confirmed.inventoryMovementCount()).isZero();
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
         assertThat(integer("select count(*) from order_items where tenant_id = ? and product_id = ?", tenant, product))
             .isEqualTo(1);
         assertThat(string("select allocation_status from orders where import_batch_id = ?", batch))
@@ -82,7 +82,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
         assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
         assertThat(string("select status from orders where import_batch_id = ?", batch)).isEqualTo("CANCELLED");
         assertThat(integer("select count(*) from inventory_movements where related_import_batch_id = ? and movement_type = 'SUMUP_REVERSAL'", batch))
-            .isEqualTo(1);
+            .isZero();
         assertThat(Boolean.TRUE.equals(jdbc.queryForObject(
             "select active from external_transactions where import_batch_id = ?", Boolean.class, batch))).isFalse();
         assertThat(string("select status from import_batches where id = ?", batch)).isEqualTo("REVERSED");
@@ -106,7 +106,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertCurrencyMismatchRow(tenant, orderBatch, product, "ORDER_HISTORY", "usd-order-1");
 
         SumUpImportCommitter.Result orderResult = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, orderBatch, 1, true, true));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, orderBatch, 1));
 
         assertThat(orderResult.errorRows()).isEqualTo(1);
         assertThat(orderResult.orderCount()).isZero();
@@ -127,7 +127,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertCurrencyMismatchRow(tenant, summaryBatch, product, "PRODUCT_SALES", null);
 
         SumUpImportCommitter.Result summaryResult = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, summaryBatch, 1, true, true));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, summaryBatch, 1));
 
         assertThat(summaryResult.errorRows()).isEqualTo(1);
         assertThat(summaryResult.orderCount()).isZero();
@@ -167,7 +167,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
                 """);
 
         SumUpImportCommitter.Result result = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, batch, 1, false, false));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, batch, 1));
 
         assertThat(result.importedRows()).isEqualTo(1);
         assertThat(result.orderCount()).isEqualTo(1);
@@ -192,7 +192,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
                  "occurredAt":"2026-07-02T12:00:00Z","currency":"EUR","amount":20.95}
                 """);
         SumUpImportCommitter.Result replay = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, secondBatch, 1, false, false));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, secondBatch, 1));
         assertThat(replay.updatedRows()).isEqualTo(1);
         assertThat(replay.orderCount()).isZero();
         assertThat(integer("select count(*) from external_transactions where tenant_id = ?", tenant)).isEqualTo(1);
@@ -202,7 +202,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertBatch(tenant, actor, refundBatch, "TRANSACTION_HISTORY");
         insertTransactionRow(tenant, refundBatch, "tx-financial-1", "d".repeat(64),
             "REFUNDED", "PAYMENT", "19.95");
-        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, refundBatch, 1, false, false));
+        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, refundBatch, 1));
         assertThat(string("select status from orders where tenant_id = ?", tenant)).isEqualTo("REFUNDED");
         assertThat(decimal("select refund_amount from orders where tenant_id = ?", tenant))
             .isEqualByComparingTo("19.9500");
@@ -214,7 +214,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertBatch(tenant, actor, repeatedRefund, "TRANSACTION_HISTORY");
         insertTransactionRow(tenant, repeatedRefund, "tx-financial-1", "e".repeat(64),
             "REFUNDED", "PAYMENT", "19.95");
-        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, repeatedRefund, 1, false, false));
+        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, repeatedRefund, 1));
         assertThat(integer("select count(*) from order_refunds where tenant_id = ?", tenant)).isEqualTo(1);
         assertThat(integer("select count(*) from inventory_movements where tenant_id = ?", tenant)).isZero();
 
@@ -242,7 +242,7 @@ class DefaultSumUpImportCommitterIntegrationTest {
     }
 
     @Test
-    void mappedOrderRefundRestoresOnlyNewlyRefundedProductQuantities() {
+    void mappedOrderRefundUpdatesSalesRecordsWithoutChangingInventory() {
         UUID tenant = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
         UUID product = UUID.randomUUID();
@@ -258,17 +258,17 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertBatch(tenant, actor, saleBatch, "ORDER_HISTORY");
         insertOrderRow(tenant, saleBatch, product, "tx-refund-order", "sale-order", "f".repeat(64),
             "SUCCESSFUL", "SALE", 2, null);
-        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, saleBatch, 1, true, true));
-        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(3);
+        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, saleBatch, 1));
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
 
         UUID partialBatch = UUID.randomUUID();
         insertBatch(tenant, actor, partialBatch, "ORDER_HISTORY");
         insertOrderRow(tenant, partialBatch, product, "tx-refund-order", "sale-order", "1".repeat(64),
             "PARTIALLY_REFUNDED", "REFUND", 1, "25.00");
         SumUpImportCommitter.Result partial = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, partialBatch, 1, true, true));
-        assertThat(partial.inventoryMovementCount()).isEqualTo(1);
-        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(4);
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, partialBatch, 1));
+        assertThat(partial.inventoryMovementCount()).isZero();
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
         assertThat(string("select status from orders where tenant_id = ?", tenant)).isEqualTo("PARTIALLY_REFUNDED");
         assertThat(decimal("select refund_amount from orders where tenant_id = ?", tenant))
             .isEqualByComparingTo("25.0000");
@@ -279,9 +279,9 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertOrderRow(tenant, repeatedPartial, product, "tx-refund-order", "sale-order", "2".repeat(64),
             "PARTIALLY_REFUNDED", "REFUND", 1, "25.00");
         SumUpImportCommitter.Result replay = committer.confirm(
-            new SumUpImportCommitter.ConfirmCommand(tenant, actor, repeatedPartial, 1, true, true));
+            new SumUpImportCommitter.ConfirmCommand(tenant, actor, repeatedPartial, 1));
         assertThat(replay.inventoryMovementCount()).isZero();
-        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(4);
+        assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
         assertThat(integer("select count(*) from order_refunds where tenant_id = ?", tenant)).isEqualTo(1);
         assertThat(integer("select refunded_quantity from order_items where tenant_id = ?", tenant)).isEqualTo(1);
 
@@ -289,13 +289,13 @@ class DefaultSumUpImportCommitterIntegrationTest {
         insertBatch(tenant, actor, fullBatch, "ORDER_HISTORY");
         insertOrderRow(tenant, fullBatch, product, "tx-refund-order", "sale-order", "3".repeat(64),
             "REFUNDED", "REFUND", 2, "50.00");
-        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, fullBatch, 1, true, true));
+        committer.confirm(new SumUpImportCommitter.ConfirmCommand(tenant, actor, fullBatch, 1));
         assertThat(integer("select current_stock from products where id = ?", product)).isEqualTo(5);
         assertThat(string("select status from orders where tenant_id = ?", tenant)).isEqualTo("REFUNDED");
         assertThat(integer("select refunded_quantity from order_items where tenant_id = ?", tenant)).isEqualTo(2);
         assertThat(integer("select count(*) from order_refunds where tenant_id = ?", tenant)).isEqualTo(2);
         assertThat(integer("select count(*) from inventory_movements where tenant_id = ? and movement_type = 'ORDER_REFUND'", tenant))
-            .isEqualTo(2);
+            .isZero();
         assertThat(string("select status from payments where tenant_id = ?", tenant)).isEqualTo("REFUNDED");
     }
 

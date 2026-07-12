@@ -12,7 +12,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
 
-interface DraftItem { productId: string; quantity: number; unitPrice: number }
+interface DraftItem { productId: string; quantity: number }
 
 const { t } = useI18n()
 const { showError } = useApiFeedback()
@@ -34,9 +34,9 @@ const products = ref<Product[]>([])
 const events = ref<SalesEvent[]>([])
 const selectedOrders = ref<Order[]>([])
 const batchFailures = ref<OrderBatchFailure[]>([])
+const loadedOrderDetails = new Set<string>()
 const eventEditor = reactive({ id: '', name: '', enabled: true, selectAfterCreate: false })
-const form = reactive({ customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: 'EUR', customerNote: '', items: [{ productId: '', quantity: 1, unitPrice: 0 }] as DraftItem[] })
-const orderTotal = computed(() => form.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0))
+const form = reactive({ customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: 'EUR', totalAmount: 0, customerNote: '', items: [] as DraftItem[] })
 const activeEvents = computed(() => events.value.filter((event) => event.enabled))
 const batchConfirmOrders = computed(() => selectedOrders.value.filter((order) => order.status === 'DRAFT'))
 const batchCancelOrders = computed(() => selectedOrders.value.filter((order) => ['DRAFT', 'CONFIRMED'].includes(order.status)))
@@ -49,6 +49,7 @@ async function load() {
       api.get<PageResponse<Product> | Product[]>('/products', { params: { page: 0, size: 100, enabled: true } }),
       api.get<SalesEvent[]>('/sales-events', { params: { includeDisabled: true } }),
     ])
+    loadedOrderDetails.clear()
     page.value = normalizePage(orders.data, currentPage.value - 1, pageSize.value)
     products.value = normalizePage(productResponse.data, 0, 500).items
     events.value = eventResponse.data
@@ -56,12 +57,12 @@ async function load() {
 }
 
 function openCreate() {
-  Object.assign(form, { customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: defaultCurrency.value, customerNote: '', items: [{ productId: '', quantity: 1, unitPrice: 0 }] })
+  Object.assign(form, { customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: defaultCurrency.value, totalAmount: 0, customerNote: '', items: [] })
   dialogOpen.value = true
 }
 
-function addItem() { form.items.push({ productId: '', quantity: 1, unitPrice: 0 }) }
-function removeItem(index: number) { if (form.items.length > 1) form.items.splice(index, 1) }
+function addItem() { form.items.push({ productId: '', quantity: 1 }) }
+function removeItem(index: number) { form.items.splice(index, 1) }
 function changeChannel(channel: string) { if (channel !== 'EXHIBITION') form.eventId = '' }
 function selectEvent() { if (form.eventId) form.salesChannel = 'EXHIBITION' }
 
@@ -98,11 +99,11 @@ async function toggleEvent(event: SalesEvent, enabled: boolean) {
 }
 function selectProduct(item: DraftItem) {
   const product = products.value.find((candidate) => candidate.id === item.productId)
-  if (product) { item.unitPrice = Number(product.salePrice); form.currency = product.currency }
+  if (product) form.currency = product.currency
 }
 
 async function createOrder() {
-  if (!form.items.length || form.items.some((item) => !item.productId || item.quantity <= 0) || orderTotal.value < 0) {
+  if (form.totalAmount <= 0 || form.items.some((item) => !item.productId || item.quantity <= 0)) {
     ElMessage.warning(t('errors.validation'))
     return
   }
@@ -116,7 +117,7 @@ async function createOrder() {
       eventName: events.value.find((event) => event.id === form.eventId)?.name || null,
       paymentMethod: 'OTHER',
       paymentStatus: 'PAID',
-      items: form.items.map((item) => ({ ...item, discountAmount: 0, taxRate: 0 })),
+      items: form.items.map((item) => ({ ...item, unitPrice: null, discountAmount: 0, taxRate: 0 })),
     })
     ElMessage.success(t('orders.recorded'))
     dialogOpen.value = false
@@ -128,13 +129,24 @@ function canBatchSelect(order: Order) {
   return ['DRAFT', 'CONFIRMED'].includes(order.status)
 }
 
+async function loadOrderDetails(order: Order, expandedRows: Order[]) {
+  if (!expandedRows.some((row) => row.id === order.id) || loadedOrderDetails.has(order.id)) return
+  loadedOrderDetails.add(order.id)
+  try {
+    const { data } = await api.get<Order>(`/orders/${order.id}`)
+    order.items = data.items
+  } catch (error) {
+    loadedOrderDetails.delete(order.id)
+    showError(error)
+  }
+}
+
 async function batchTransition(action: 'confirm' | 'cancel') {
   const candidates = action === 'confirm' ? batchConfirmOrders.value : batchCancelOrders.value
   if (!candidates.length) return
-  const stockCount = candidates.filter((order) => order.status === 'CONFIRMED').length
   try {
     await ElMessageBox.confirm(
-      t(action === 'confirm' ? 'orders.batchConfirmBody' : 'orders.batchCancelBody', { count: candidates.length, stockCount }),
+      t(action === 'confirm' ? 'orders.batchConfirmBody' : 'orders.batchCancelBody', { count: candidates.length }),
       t(action === 'confirm' ? 'orders.batchConfirmTitle' : 'orders.batchCancelTitle'),
       { type: 'warning', confirmButtonText: t(action === 'confirm' ? 'orders.batchConfirm' : 'orders.batchCancel'), cancelButtonText: t('common.cancel') },
     )
@@ -160,7 +172,8 @@ async function transition(order: Order, action: 'confirm' | 'cancel' | 'refund')
     if (action === 'refund') {
       const { data: detail } = await api.get<Order>(`/orders/${order.id}`)
       const items = detail.items.filter((item) => (item.quantity - (item.refundedQuantity || 0)) > 0).map((item) => ({ orderItemId: item.id, quantity: item.quantity - (item.refundedQuantity || 0) }))
-      await api.post(`/orders/${order.id}/refunds`, { items, reason: t('orders.refundOrder') })
+      const amount = Math.max(0, Number(detail.totalAmount) - Number(detail.refundAmount || 0))
+      await api.post(`/orders/${order.id}/refunds`, { items, amount, reason: t('orders.refundOrder') })
     } else {
       await api.post(`/orders/${order.id}/${action}`)
     }
@@ -196,9 +209,9 @@ onMounted(load)
         <ElButton type="primary" :loading="batchProcessing" :disabled="!batchConfirmOrders.length" @click="batchTransition('confirm')">{{ t('orders.batchConfirm') }} ({{ batchConfirmOrders.length }})</ElButton>
         <ElButton type="danger" plain :loading="batchProcessing" :disabled="!batchCancelOrders.length" @click="batchTransition('cancel')">{{ t('orders.batchCancel') }} ({{ batchCancelOrders.length }})</ElButton>
       </div>
-      <ElTable v-if="page.items.length || loading" v-loading="loading" :data="page.items" row-key="id" @selection-change="selectedOrders = $event">
+      <ElTable v-if="page.items.length || loading" v-loading="loading" :data="page.items" row-key="id" @selection-change="selectedOrders = $event" @expand-change="loadOrderDetails">
         <ElTableColumn type="selection" width="48" :selectable="canBatchSelect" />
-        <ElTableColumn type="expand"><template #default="scope"><div class="order-lines"><div v-for="item in scope.row.items" :key="item.id || item.productId"><span><strong>{{ item.productName || item.sku }}</strong><small>{{ item.sku }}</small></span><span>{{ item.quantity }} × {{ money(item.unitPrice, scope.row.currency) }}</span><b>{{ money(item.lineTotal ?? item.quantity * item.unitPrice, scope.row.currency) }}</b></div></div></template></ElTableColumn>
+        <ElTableColumn type="expand"><template #default="scope"><div class="order-lines"><div v-for="item in scope.row.items" :key="item.id || item.productId"><span><strong>{{ item.productName || item.sku }}</strong><small>{{ item.sku }}</small></span><span>{{ t('orders.quantity') }}: {{ item.quantity }}</span><b>{{ money(item.lineTotal ?? item.quantity * item.unitPrice, scope.row.currency) }}</b></div><p v-if="!scope.row.items?.length">{{ t('orders.noItems') }}</p></div></template></ElTableColumn>
         <ElTableColumn prop="orderNumber" :label="t('orders.orderNumber')" min-width="150"><template #default="scope"><code class="order-code">{{ scope.row.orderNumber }}</code></template></ElTableColumn>
         <ElTableColumn :label="t('orders.customer')" min-width="180"><template #default="scope"><div class="cell-stack"><strong>{{ scope.row.customerName || '—' }}</strong><small>{{ scope.row.customerEmail }}</small></div></template></ElTableColumn>
         <ElTableColumn :label="t('orders.orderedAt')" min-width="165"><template #default="scope">{{ dateTime(scope.row.orderDate) }}</template></ElTableColumn>
@@ -218,6 +231,7 @@ onMounted(load)
         <ElFormItem :label="t('orders.customerEmail')"><ElInput v-model="form.customerEmail" type="email" /></ElFormItem>
         <ElFormItem :label="t('orders.orderedAt')"><ElDatePicker v-model="form.orderDate" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.SSSZ" class="full-width" /></ElFormItem>
         <ElFormItem :label="t('orders.channel')"><ElSelect v-model="form.salesChannel" class="full-width" @change="changeChannel"><ElOption :label="t('orders.channels.exhibition')" value="EXHIBITION" /><ElOption :label="t('orders.channels.online')" value="ONLINE" /><ElOption :label="t('orders.channels.sumup')" value="SUMUP" /><ElOption :label="t('orders.channels.other')" value="OTHER" /></ElSelect></ElFormItem>
+        <ElFormItem :label="t('orders.totalAmount')" required><ElInputNumber v-model="form.totalAmount" :min="0.01" :precision="2" controls-position="right" class="full-width" /></ElFormItem>
         <ElFormItem v-if="form.salesChannel === 'EXHIBITION'" :label="t('orders.event')">
           <ElSelect v-model="form.eventId" class="full-width" clearable filterable :placeholder="t('orders.selectEvent')" @change="selectEvent">
             <ElOption v-for="event in activeEvents" :key="event.id" :label="event.name" :value="event.id" />
@@ -225,15 +239,14 @@ onMounted(load)
           <ElButton text :icon="Plus" @click="openEventEditor(undefined, true)">{{ t('orders.addEvent') }}</ElButton>
         </ElFormItem>
         <div class="span-2 order-editor">
-          <div class="order-editor__heading"><strong>{{ t('orders.items') }}</strong><ElButton text :icon="Plus" @click="addItem">{{ t('orders.addItem') }}</ElButton></div>
+          <div class="order-editor__heading"><span><strong>{{ t('orders.items') }}</strong><small>{{ t('orders.itemsOptional') }}</small></span><ElButton text :icon="Plus" @click="addItem">{{ t('orders.addItem') }}</ElButton></div>
+          <p v-if="!form.items.length" class="order-editor__empty">{{ t('orders.itemsHint') }}</p>
           <div v-for="(item, index) in form.items" :key="index" class="order-item-row">
-            <ElSelect v-model="item.productId" filterable :placeholder="t('orders.product')" @change="selectProduct(item)"><ElOption v-for="product in products" :key="product.id" :label="`${product.name} · ${product.sku} (${product.currentStock})`" :value="product.id" /></ElSelect>
+            <ElSelect v-model="item.productId" filterable :placeholder="t('orders.product')" @change="selectProduct(item)"><ElOption v-for="product in products" :key="product.id" :label="`${product.name} · ${product.sku}`" :value="product.id" /></ElSelect>
             <ElInputNumber v-model="item.quantity" :min="1" :precision="0" controls-position="right" />
-            <ElInputNumber v-model="item.unitPrice" :min="0" :precision="2" controls-position="right" />
-            <strong>{{ money(item.quantity * item.unitPrice, form.currency) }}</strong>
-            <ElButton text type="danger" :icon="Close" :disabled="form.items.length === 1" :aria-label="t('common.delete')" @click="removeItem(index)" />
+            <ElButton text type="danger" :icon="Close" :aria-label="t('common.delete')" @click="removeItem(index)" />
           </div>
-          <div class="order-total"><span>{{ t('orders.total') }}</span><strong>{{ money(orderTotal, form.currency) }}</strong></div>
+          <div class="order-total"><span>{{ t('orders.total') }}</span><strong>{{ money(form.totalAmount, form.currency) }}</strong></div>
         </div>
         <ElFormItem class="span-2" :label="t('orders.notes')"><ElInput v-model="form.customerNote" type="textarea" :rows="3" /></ElFormItem>
       </ElForm>

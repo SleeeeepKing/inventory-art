@@ -286,7 +286,7 @@ public class SumUpImportService {
             Math.max(0, batch.getValidRows() - duplicateCount), duplicateCount, batch.getErrorRows(),
             needsMapping == null ? 0 : needsMapping,
             type == ImportType.TRANSACTION_HISTORY || type == ImportType.ORDER_HISTORY,
-            type == ImportType.ORDER_HISTORY || type == ImportType.PRODUCT_SALES,
+            false,
             type == ImportType.TRANSACTION_HISTORY || type == ImportType.ACCOUNTING_REPORT);
     }
 
@@ -350,12 +350,11 @@ public class SumUpImportService {
         SumUpImportCommitter integration = committer.getIfAvailable();
         if (integration == null) {
             throw new BusinessException("IMPORT_COMMITTER_NOT_AVAILABLE",
-                "Order and inventory import integration is not installed", HttpStatus.NOT_IMPLEMENTED);
+                "Order import integration is not installed", HttpStatus.NOT_IMPLEMENTED);
         }
         batch.markImporting();
         SumUpImportCommitter.Result result = integration.confirm(new SumUpImportCommitter.ConfirmCommand(
-            batch.getTenantId(), currentUser.userId(), batchId, batch.getAnalysisVersion(),
-            request.applyInventory(), request.allowUnallocatedOrders()));
+            batch.getTenantId(), currentUser.userId(), batchId, batch.getAnalysisVersion()));
         batch.markCompleted(result);
         audit.record(batch.getTenantId(), "SUMUP_IMPORT_CONFIRM", "IMPORT_BATCH", batchId, "SUCCESS",
             Map.of("importedRows", result.importedRows(), "orderCount", result.orderCount(),
@@ -373,7 +372,7 @@ public class SumUpImportService {
         SumUpImportCommitter integration = committer.getIfAvailable();
         if (integration == null) {
             throw new BusinessException("IMPORT_COMMITTER_NOT_AVAILABLE",
-                "Order and inventory reverse integration is not installed", HttpStatus.NOT_IMPLEMENTED);
+                "Order import reverse integration is not installed", HttpStatus.NOT_IMPLEMENTED);
         }
         integration.reverse(new SumUpImportCommitter.ReverseCommand(batch.getTenantId(), currentUser.userId(), batchId));
         batch.markReversed(currentUser.userId());

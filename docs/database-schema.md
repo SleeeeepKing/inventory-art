@@ -19,7 +19,7 @@ erDiagram
     TENANTS ||--o{ PRODUCTS : owns
     PRODUCTS ||--o{ INVENTORY_MOVEMENTS : records
     TENANTS ||--o{ ORDERS : owns
-    ORDERS ||--|{ ORDER_ITEMS : contains
+    ORDERS ||--o{ ORDER_ITEMS : optionally_contains
     ORDERS ||--o{ PAYMENTS : receives
     ORDERS ||--o{ ORDER_REFUNDS : has
     ORDER_REFUNDS ||--o{ ORDER_REFUND_ITEMS : contains
@@ -52,7 +52,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 | 表 | 目的与关键字段 | 关键约束/索引 |
 | --- | --- | --- |
 | `products` | 商品资料、售价/成本、当前库存、低库存阈值、乐观锁版本 | `UNIQUE(tenant_id,sku)`；`current_stock >= 0`；Tenant + enabled + name 索引 |
-| `inventory_movements` | 每次库存变化前后值、类型、数量、订单/导入关联、操作人 | `stock_after >= 0`；Tenant + product + created_at 索引；记录不可物理删除 |
+| `inventory_movements` | 每次独立库存调整的前后值、类型、数量、引用和操作人 | `stock_after >= 0`；Tenant + product + created_at 索引；记录不可物理删除 |
 
 `products.current_stock` 是便于读取的当前快照，`inventory_movements` 是审计来源。两者只能在一个库存事务中同时变更。`quantity` 使用有符号数表达增加或扣减，`stock_before/stock_after` 用于检测和审计异常。
 
@@ -60,13 +60,13 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 
 | 表 | 目的与关键字段 | 关键约束/索引 |
 | --- | --- | --- |
-| `orders` | 订单号、来源、状态、分配状态、渠道、客户快照、金额、币种、库存幂等标记 | `UNIQUE(tenant_id,order_number)`；Tenant + 日期/状态索引；`version` 乐观锁 |
+| `orders` | 订单号、来源、状态、分配状态、渠道、客户快照、必填金额和币种 | `UNIQUE(tenant_id,order_number)`；Tenant + 日期/状态索引；`version` 乐观锁 |
 | `order_items` | 商品关联与 SKU/名称快照、单价、数量、税/折扣/行总额、已退款数量 | Tenant 组合外键到订单和商品；`quantity > 0` |
 | `payments` | 订单支付、provider 交易号、金额、币种、方式和状态 | Tenant 组合外键到订单 |
 | `order_refunds` | 订单级退款金额、原因和操作人 | Tenant 组合外键到订单；保留历史 |
 | `order_refund_items` | 部分/全额退款对应的订单项、数量和金额 | Tenant 组合外键到退款和订单项；`quantity > 0` |
 
-订单保留商品名称和 SKU 快照，因此商品之后改名不会改变历史单据。`inventory_applied` 保证重复确认不重复扣库存；`manually_modified_after_import` 用于判断导入能否自动撤销。
+订单可以没有 `order_items`。有商品时会保留名称和 SKU 快照，因此商品之后改名不会改变历史单据。`inventory_applied` 与库存流水中的订单/导入关联列仅为兼容历史数据保留；新订单和新导入始终不应用库存。`manually_modified_after_import` 用于判断导入能否自动撤销。
 
 ### SumUp 与外部销售
 
@@ -77,7 +77,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 | `import_column_mappings` | 此批次源列到规范字段的映射 | `UNIQUE(tenant_id,import_batch_id,source_column)` |
 | `external_transactions` | SumUp 交易状态、金额、费用、支付信息、fingerprint、清理后的 JSON | 非空 provider ID 的部分唯一索引；Tenant + provider + fingerprint 唯一 |
 | `external_product_mappings` | 外部商品名/reference 到内部商品的 Tenant 私有映射 | `UNIQUE(tenant_id,provider,normalized_external_name)` |
-| `imported_sales_summaries` | 产品/周期销售汇总，用于对账，可记录是否应用库存 | Tenant 组合外键到批次和商品 |
+| `imported_sales_summaries` | 产品/周期销售汇总，只用于对账，不应用库存 | Tenant 组合外键到批次和商品 |
 | `imported_accounting_summaries` | 日期/支付方式/税率汇总，用于会计对账 | Tenant 组合外键到批次；不生成订单或库存 |
 
 `external_transactions` 的两层幂等键：
@@ -113,7 +113,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 ## 金额、币种和时间
 
 - 每个金额列都和同一记录的 ISO 4217 `currency` 一起解释。
-- 订单小计、折扣、税、退款和总额均由后端计算；数据库的四位小数保留中间精度，API/展示按币种舍入。
+- 订单总额由请求显式提供且必须为正数；商品行金额只用于商品销售分析，不覆盖订单总额。数据库的四位小数保留中间精度，API/展示按币种舍入。
 - 报表按币种分组，禁止在 SQL 中把不同币种直接 `SUM` 成一个值。
 - 用户提交的本地日期范围先使用 Tenant `timezone` 转为半开 UTC 区间 `[start,end)`，再查询 `TIMESTAMPTZ`。
 - `tenants.locale` 用于业务区域默认值；`users.preferred_locale` 控制 UI 文案，默认英文。
@@ -122,7 +122,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 
 - 订单、支付、导入和文件使用明确字符串枚举，并由应用服务验证允许的状态迁移。
 - 库存流水、退款、导入行和审计日志是历史记录，不物理删除。
-- 撤销导入不会删除原批次；它将批次置为 `REVERSED`，失效可安全失效的外部数据，并生成反向库存流水。
+- 撤销导入不会删除原批次；它将批次置为 `REVERSED`，并失效可安全失效的订单和外部交易，不触碰库存。
 - 所有导入 JSON 只保留排错/重处理需要的字段；完整银行卡号、CVV、认证信息不得写入 JSONB。
 
 ## Migration 规则
@@ -138,7 +138,7 @@ ADMIN 的 `users.tenant_id` 可以为空；普通 USER 必须非空。`refresh_t
 运维排错时可以在只读事务中验证：
 
 - 商品 `current_stock` 是否与该商品最后一条流水 `stock_after` 一致。
-- 订单 `inventory_applied=true` 是否存在对应订单库存流水。
+- 新创建订单和导入批次是否保持零库存流水。
 - `import_batches` 的各行计数是否等于 `import_rows` 状态聚合。
 - active external transaction 是否只关联同 Tenant 的订单。
 - 已确认 `stored_files` 是否能在对象存储中 HEAD 到，未确认文件是否超过清理期限。

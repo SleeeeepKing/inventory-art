@@ -58,8 +58,7 @@ public final class SumUpDtos {
     public record ProductMappingsRequest(@Min(0) int expectedAnalysisVersion,
                                          @NotEmpty List<@Valid ProductMappingItem> mappings) {}
 
-    public record ConfirmRequest(@Min(0) int expectedAnalysisVersion, boolean applyInventory,
-                                 boolean allowUnallocatedOrders) {}
+    public record ConfirmRequest(@Min(0) int expectedAnalysisVersion) {}
 
     public record ImportActionResponse(UUID batchId, ImportBatchStatus status, int importedRows,
                                        int updatedRows, int duplicateRows, int errorRows,

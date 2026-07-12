@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Check, Document, Download, UploadFilled } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
 import { normalizePage } from '@/services/paging'
@@ -19,7 +19,7 @@ interface ImportPreview {
   columns?: SourceColumn[]
   mappings?: Record<string, string>
   unmatchedProducts?: ProductMatch[]
-  impact?: { orders: number; transactions: number; stockMovements: number; errors: number }
+  impact?: { orders: number; transactions: number; errors: number }
   sampleRows?: Array<Record<string, unknown>>
 }
 interface AnalyzeResponse { batch: ImportBatch; sourceColumns: string[]; suggestedMappings: Record<string, string> }
@@ -31,7 +31,6 @@ interface BackendPreview {
   errors: number
   needsProductMapping: number
   createsOrders: boolean
-  affectsInventory: boolean
 }
 
 const { t } = useI18n()
@@ -49,7 +48,6 @@ const preview = ref<ImportPreview>({ analysisVersion: 0 })
 const products = ref<Product[]>([])
 const columnMappings = ref<Record<string, string>>({})
 const productMatches = ref<ProductMatch[]>([])
-const applySummaryInventory = ref(false)
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 
 const fieldOptions = computed(() => [
@@ -64,11 +62,8 @@ const fieldOptions = computed(() => [
   { value: 'quantity', label: t('import.quantity') },
   { value: 'feeAmount', label: t('import.fee') },
 ])
-const isProductSummary = computed(() => batch.value?.importType === 'PRODUCT_SALES')
 const impact = computed(() => {
-  const previewImpact = preview.value.impact || { orders: 0, transactions: 0, stockMovements: 0, errors: 0 }
-  if (isProductSummary.value && !applySummaryInventory.value) return { ...previewImpact, stockMovements: 0 }
-  return previewImpact
+  return preview.value.impact || { orders: 0, transactions: 0, errors: 0 }
 })
 
 function chooseFile() { fileInput.value?.click() }
@@ -107,7 +102,7 @@ async function fetchPreview() {
     ...preview.value,
     analysisVersion: data.batch.analysisVersion || 0,
     unmatchedProducts: [...matches.values()],
-    impact: { orders: data.createsOrders ? data.estimatedNew : 0, transactions: data.estimatedNew, stockMovements: data.affectsInventory ? data.estimatedNew : 0, errors: data.errors },
+    impact: { orders: data.createsOrders ? data.estimatedNew : 0, transactions: data.estimatedNew, errors: data.errors },
     sampleRows: data.rows.map((row) => row.normalized || {}),
   }
   productMatches.value = [...matches.values()]
@@ -175,18 +170,9 @@ async function saveProducts() {
 
 async function confirmImport() {
   if (!batch.value) return
-  if (isProductSummary.value && applySummaryInventory.value) {
-    try {
-      await ElMessageBox.confirm(t('import.summaryInventoryBody'), t('import.summaryInventoryTitle'), { confirmButtonText: t('import.applyInventory'), cancelButtonText: t('common.cancel'), type: 'warning' })
-    } catch (error) {
-      if (error === 'cancel' || error === 'close') return
-      showError(error)
-      return
-    }
-  }
   busy.value = true
   try {
-    await api.post(`/imports/sumup/${batch.value.id}/confirm`, { expectedAnalysisVersion: preview.value.analysisVersion, applyInventory: isProductSummary.value ? applySummaryInventory.value : true, allowUnallocatedOrders: true })
+    await api.post(`/imports/sumup/${batch.value.id}/confirm`, { expectedAnalysisVersion: preview.value.analysisVersion })
     await pollBatch(['COMPLETED', 'COMPLETED_WITH_ERRORS'], async () => { step.value = 4; busy.value = false })
   } catch (error) { busy.value = false; showError(error) }
 }
@@ -243,9 +229,8 @@ onBeforeUnmount(() => { if (pollTimer) clearTimeout(pollTimer) })
 
       <div v-else-if="step === 3" class="wizard-stage">
         <div class="stage-heading"><h2>{{ t('import.impactTitle') }}</h2><p>{{ t('import.reviewWarning') }}</p></div>
-        <div class="impact-grid"><div><span>{{ t('import.impactOrders') }}</span><strong>{{ number(impact.orders) }}</strong></div><div><span>{{ t('import.impactTransactions') }}</span><strong>{{ number(impact.transactions) }}</strong></div><div><span>{{ t('import.impactStock') }}</span><strong>{{ number(impact.stockMovements) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(impact.errors) }}</strong></div></div>
+        <div class="impact-grid"><div><span>{{ t('import.impactOrders') }}</span><strong>{{ number(impact.orders) }}</strong></div><div><span>{{ t('import.impactTransactions') }}</span><strong>{{ number(impact.transactions) }}</strong></div><div data-warning><span>{{ t('import.impactErrors') }}</span><strong>{{ number(impact.errors) }}</strong></div></div>
         <ElTable v-if="preview.sampleRows?.length" class="preview-table" :data="preview.sampleRows" max-height="360"><ElTableColumn type="index" width="58" :label="t('import.row')" /><ElTableColumn :label="t('import.normalizedPreview')"><template #default="scope"><pre class="preview-json">{{ formatPreviewRow(scope.row) }}</pre></template></ElTableColumn></ElTable>
-        <ElCheckbox v-if="isProductSummary" v-model="applySummaryInventory" class="summary-inventory-choice">{{ t('import.applySummaryInventory') }}</ElCheckbox>
         <ElAlert :title="t('import.reviewWarning')" type="warning" show-icon :closable="false" />
         <div class="wizard-actions"><ElButton @click="step = 2">{{ t('common.back') }}</ElButton><ElButton type="primary" :loading="busy" @click="confirmImport">{{ busy ? t('import.importing') : t('import.confirmImport') }}</ElButton></div>
       </div>

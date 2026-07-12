@@ -5,8 +5,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
-import com.inventoryart.inventory.InventoryService;
-import com.inventoryart.inventory.MovementType;
 import jakarta.persistence.EntityManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,7 +39,7 @@ import java.util.UUID;
  *
  * <p>The parser deliberately has no dependency on orders or inventory. This
  * service is therefore the single transaction in which analyzed rows become
- * financial records, orders and stock movements. Tenant and batch rows are
+ * financial records and orders. Tenant and batch rows are
  * locked before any write so a confirmation cannot be raced or replayed.</p>
  */
 @Service
@@ -57,14 +55,11 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
-    private final InventoryService inventory;
     private final EntityManager entityManager;
 
-    public DefaultSumUpImportCommitter(JdbcTemplate jdbc, ObjectMapper json,
-                                       InventoryService inventory, EntityManager entityManager) {
+    public DefaultSumUpImportCommitter(JdbcTemplate jdbc, ObjectMapper json, EntityManager entityManager) {
         this.jdbc = jdbc;
         this.json = json;
-        this.inventory = inventory;
         this.entityManager = entityManager;
     }
 
@@ -99,8 +94,6 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                 "The import type must be selected before confirmation");
         }
 
-        // InventoryService writes through JPA while the rest of this boundary uses
-        // JDBC. Flush before deriving authoritative counters from PostgreSQL.
         entityManager.flush();
         Result result = resultFor(command.tenantId(), command.batchId());
         int skippedRows = rowCount(command.tenantId(), command.batchId(), ImportRowStatus.SKIPPED);
@@ -134,29 +127,6 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         lockTenant(command.tenantId());
         refuseUnsafeReversal(command);
 
-        List<StockDelta> reversals = jdbc.query("""
-            select product_id, -sum(quantity)::bigint as reversal_quantity
-              from inventory_movements
-             where tenant_id = ? and related_import_batch_id = ? and movement_type = 'SUMUP_IMPORT'
-             group by product_id
-             order by product_id
-            """, (rs, rowNum) -> new StockDelta((UUID) rs.getObject("product_id"),
-            rs.getLong("reversal_quantity")), command.tenantId(), command.batchId());
-        for (StockDelta reversal : reversals) {
-            int quantity;
-            try {
-                quantity = Math.toIntExact(reversal.quantity());
-            } catch (ArithmeticException exception) {
-                throw new BusinessException("IMPORT_REVERSAL_OVERFLOW",
-                    "The stock reversal is outside the supported quantity range", HttpStatus.CONFLICT);
-            }
-            if (quantity == 0) continue;
-            inventory.apply(command.tenantId(), reversal.productId(), quantity, MovementType.SUMUP_REVERSAL,
-                null, command.batchId(), "SUMUP-REVERSAL-" + command.batchId(),
-                "Reversal of SumUp import batch", command.actorId());
-        }
-        entityManager.flush();
-
         int cancelledOrders = jdbc.update("""
             update orders
                set status = 'CANCELLED', inventory_applied = false, updated_at = now(), version = version + 1
@@ -175,7 +145,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
              where tenant_id = ? and id = ?
             """, command.actorId(), command.tenantId(), command.batchId());
         return new Result(batch.importedRows(), batch.updatedRows(), batch.duplicateRows(), batch.errorRows(),
-            cancelledOrders, reversals.size());
+            cancelledOrders, 0);
     }
 
     private void confirmTransactions(ConfirmCommand command, Batch batch, TenantDefaults defaults, List<Row> rows) {
@@ -226,26 +196,9 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
 
                 List<Line> lines = orderLines(command.tenantId(), group, orderCurrency);
                 boolean fullyMapped = lines.stream().allMatch(line -> line.product() != null);
-                Map<UUID, Integer> quantities = quantities(lines);
-                boolean inventoryCanBeApplied = command.applyInventory() && fullyMapped
-                    && hasStock(command.tenantId(), quantities);
-                if (!inventoryCanBeApplied && !command.allowUnallocatedOrders()) {
-                    markAll(group, ImportRowStatus.ERROR, null,
-                        fullyMapped ? (command.applyInventory() ? "INSUFFICIENT_STOCK" : "UNALLOCATED_ORDERS_DISABLED")
-                            : "PRODUCT_MAPPING_REQUIRED");
-                    continue;
-                }
-
                 UUID orderId = createProductOrder(command, entry.getKey(), representative, orderCurrency, lines,
-                    inventoryCanBeApplied);
+                    fullyMapped);
                 insertOrderItems(command.tenantId(), orderId, lines);
-                if (inventoryCanBeApplied) {
-                    for (Map.Entry<UUID, Integer> quantity : quantities.entrySet()) {
-                        inventory.apply(command.tenantId(), quantity.getKey(), -quantity.getValue(),
-                            MovementType.SUMUP_IMPORT, orderId, command.batchId(),
-                            "SUMUP-" + entry.getKey(), "Imported SumUp order", command.actorId());
-                    }
-                }
                 linkExternalOrder(external.id(), command.tenantId(), orderId);
                 markAll(group, statusFor(external.outcome()), orderId, null);
             } catch (RowProblem problem) {
@@ -270,23 +223,6 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                 mark(row, ImportRowStatus.ERROR, null, problem.code());
             }
         }
-        Map<UUID, Integer> quantities = new TreeMap<>();
-        boolean applyEligible = command.applyInventory();
-        for (Row row : summaryRows) {
-            int quantity = positiveQuantity(row);
-            ProductSnapshot product = row.linkedProductId() == null ? null : products.get(row.linkedProductId());
-            if (command.applyInventory() && product == null) applyEligible = false;
-            if (product != null) quantities.merge(product.id(), quantity, DefaultSumUpImportCommitter::addQuantity);
-        }
-        if (applyEligible) applyEligible = hasStock(command.tenantId(), quantities);
-        if (applyEligible) {
-            for (Map.Entry<UUID, Integer> quantity : quantities.entrySet()) {
-                inventory.apply(command.tenantId(), quantity.getKey(), -quantity.getValue(),
-                    MovementType.SUMUP_IMPORT, null, command.batchId(), "SUMUP-PRODUCT-SUMMARY",
-                    "Confirmed SumUp product sales summary", command.actorId());
-            }
-        }
-
         for (Row row : summaryRows) {
             try {
                 int quantity = positiveQuantity(row);
@@ -303,13 +239,8 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                     """, UUID.randomUUID(), command.tenantId(), command.batchId(),
                     product == null ? null : product.id(), text(row.normalized(), "productName", 500),
                     timestamp(period), timestamp(period), quantity, gross, net,
-                    currency(row.normalized(), defaults.currency()), applyEligible);
-                if (command.applyInventory() && !applyEligible) {
-                    mark(row, ImportRowStatus.ERROR, null, product == null
-                        ? "PRODUCT_MAPPING_REQUIRED" : "PRODUCT_SUMMARY_INVENTORY_NOT_APPLIED");
-                } else {
-                    mark(row, ImportRowStatus.IMPORTED, null, null);
-                }
+                    currency(row.normalized(), defaults.currency()), false);
+                mark(row, ImportRowStatus.IMPORTED, null, null);
             } catch (RowProblem problem) {
                 mark(row, ImportRowStatus.ERROR, null, problem.code());
             }
@@ -422,12 +353,12 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         Instant orderDate = instant(row.normalized(), "occurredAt").orElseGet(DefaultSumUpImportCommitter::now);
         insertOrder(orderId, command, orderNumber(command.batchId(), "row-" + row.rowNumber()),
             text(row.normalized(), "transactionId", 200), currency(row.normalized(), defaults.currency()),
-            amount, ZERO, ZERO, amount, amount, false, orderDate);
+            amount, ZERO, ZERO, amount, amount, "UNALLOCATED", orderDate);
         return orderId;
     }
 
     private UUID createProductOrder(ConfirmCommand command, String groupKey, Row representative,
-                                    String orderCurrency, List<Line> lines, boolean inventoryApplied) {
+                                    String orderCurrency, List<Line> lines, boolean fullyMapped) {
         BigDecimal subtotal = lines.stream().map(Line::subtotal).reduce(ZERO, BigDecimal::add);
         BigDecimal discount = lines.stream().map(Line::discount).reduce(ZERO, BigDecimal::add);
         BigDecimal tax = lines.stream().map(Line::tax).reduce(ZERO, BigDecimal::add);
@@ -437,14 +368,14 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
             text(representative.normalized(), "transactionId", 200),
             orderCurrency,
             money(subtotal), money(discount), money(tax), money(total),
-            inventoryApplied ? ZERO : money(total), inventoryApplied,
+            fullyMapped ? ZERO : money(total), fullyMapped ? "FULLY_ALLOCATED" : "UNALLOCATED",
             instant(representative.normalized(), "occurredAt").orElseGet(DefaultSumUpImportCommitter::now));
         return orderId;
     }
 
     private void insertOrder(UUID orderId, ConfirmCommand command, String number, String externalTransactionId,
                              String currency, BigDecimal subtotal, BigDecimal discount, BigDecimal tax,
-                             BigDecimal total, BigDecimal unallocated, boolean inventoryApplied, Instant orderDate) {
+                             BigDecimal total, BigDecimal unallocated, String allocationStatus, Instant orderDate) {
         jdbc.update("""
             insert into orders
               (id, tenant_id, order_number, source, external_provider, external_transaction_id,
@@ -453,10 +384,10 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                inventory_applied, manually_modified_after_import, import_batch_id, created_by,
                created_at, updated_at, version)
             values (?, ?, ?, 'SUMUP_IMPORT', 'SUMUP', ?, 'COMPLETED', ?, 'SUMUP', ?, ?, ?, ?, ?, ?, ?,
-                    'SUMUP', 'PAID', ?, ?, false, ?, ?, now(), now(), 0)
+                    'SUMUP', 'PAID', ?, false, false, ?, ?, now(), now(), 0)
             """, orderId, command.tenantId(), number, externalTransactionId,
-            inventoryApplied ? "FULLY_ALLOCATED" : "UNALLOCATED", currency,
-            subtotal, discount, tax, ZERO, total, unallocated, timestamp(orderDate), inventoryApplied,
+            allocationStatus, currency,
+            subtotal, discount, tax, ZERO, total, unallocated, timestamp(orderDate),
             command.batchId(), command.actorId());
         jdbc.update("""
             insert into payments
@@ -504,11 +435,10 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         List<RefundAllocation> allocations = refundAllocations(command.tenantId(), orderId, rows);
         BigDecimal allocatedAmount = allocations.stream().map(RefundAllocation::amount)
             .reduce(ZERO, BigDecimal::add);
-        // A malformed file must never return more stock than its new financial
-        // refund can explain. A small tolerance covers normal currency rounding.
+        // A malformed file must never allocate more item value than its new
+        // financial refund can explain. A small tolerance covers currency rounding.
         if (allocatedAmount.compareTo(delta.add(new BigDecimal("0.50"))) > 0) allocations = List.of();
 
-        Map<UUID, Integer> stockReturns = new TreeMap<>();
         for (RefundAllocation allocation : allocations) {
             jdbc.update("""
                 update order_items set refunded_quantity = refunded_quantity + ?, updated_at = now()
@@ -521,28 +451,18 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                 values (?, ?, ?, ?, ?, ?, now())
                 """, UUID.randomUUID(), command.tenantId(), refundId, allocation.itemId(),
                 allocation.quantity(), allocation.amount());
-            if (order.inventoryApplied() && allocation.productId() != null) {
-                stockReturns.merge(allocation.productId(), allocation.quantity(),
-                    DefaultSumUpImportCommitter::addQuantity);
-            }
-        }
-        if (!hasOriginalInventoryMovement(command.tenantId(), orderId)) stockReturns.clear();
-        for (Map.Entry<UUID, Integer> stockReturn : stockReturns.entrySet()) {
-            inventory.apply(command.tenantId(), stockReturn.getKey(), stockReturn.getValue(),
-                MovementType.ORDER_REFUND, orderId, command.batchId(), order.orderNumber(),
-                "Imported SumUp refund", command.actorId());
         }
 
     }
 
     private OrderState lockedOrder(UUID tenantId, UUID orderId) {
         List<OrderState> orders = jdbc.query("""
-            select id, total_amount, refund_amount, status, payment_status, inventory_applied,
+            select id, total_amount, refund_amount, status, payment_status,
                    order_number, currency, external_transaction_id, order_date
               from orders where tenant_id = ? and id = ? for update
             """, (rs, rowNum) -> new OrderState((UUID) rs.getObject("id"),
             rs.getBigDecimal("total_amount"), rs.getBigDecimal("refund_amount"), rs.getString("status"),
-            rs.getString("payment_status"), rs.getBoolean("inventory_applied"), rs.getString("order_number"),
+            rs.getString("payment_status"), rs.getString("order_number"),
             rs.getString("currency"), rs.getString("external_transaction_id"),
             rs.getTimestamp("order_date").toInstant()), tenantId, orderId);
         if (orders.isEmpty()) throw new RowProblem("LINKED_ORDER_NOT_FOUND");
@@ -632,14 +552,6 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         }
     }
 
-    private boolean hasOriginalInventoryMovement(UUID tenantId, UUID orderId) {
-        Integer count = jdbc.queryForObject("""
-            select count(*) from inventory_movements
-             where tenant_id = ? and related_order_id = ? and movement_type = 'SUMUP_IMPORT'
-            """, Integer.class, tenantId, orderId);
-        return count != null && count > 0;
-    }
-
     private List<Line> orderLines(UUID tenantId, List<Row> group, String orderCurrency) {
         Map<UUID, ProductSnapshot> products = products(tenantId, group);
         List<Line> result = new ArrayList<>(group.size());
@@ -691,38 +603,17 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
         Map<UUID, ProductSnapshot> result = new LinkedHashMap<>();
         for (UUID id : ids.stream().sorted().toList()) {
             jdbc.query("""
-                select id, sku, name, sale_price, currency, current_stock from products
+                select id, sku, name, sale_price, currency from products
                  where tenant_id = ? and id = ?
                 """, rs -> {
                     if (rs.next()) {
                         ProductSnapshot product = new ProductSnapshot((UUID) rs.getObject("id"),
                             rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("sale_price"),
-                            rs.getString("currency"), rs.getInt("current_stock"));
+                            rs.getString("currency"));
                         result.put(product.id(), product);
                     }
                     return null;
                 }, tenantId, id);
-        }
-        return result;
-    }
-
-    private boolean hasStock(UUID tenantId, Map<UUID, Integer> quantities) {
-        for (Map.Entry<UUID, Integer> requirement : quantities.entrySet().stream()
-            .sorted(Map.Entry.comparingByKey()).toList()) {
-            List<Integer> stocks = jdbc.query("""
-                select current_stock from products where tenant_id = ? and id = ? for update
-                """, (rs, rowNum) -> rs.getInt(1), tenantId, requirement.getKey());
-            if (stocks.isEmpty() || stocks.getFirst() < requirement.getValue()) return false;
-        }
-        return true;
-    }
-
-    private Map<UUID, Integer> quantities(List<Line> lines) {
-        Map<UUID, Integer> result = new TreeMap<>();
-        for (Line line : lines) {
-            if (line.product() != null) {
-                result.merge(line.product().id(), line.quantity(), DefaultSumUpImportCommitter::addQuantity);
-            }
         }
         return result;
     }
@@ -781,15 +672,10 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                 return null;
             }, tenantId, batchId);
         int orders = count("orders", tenantId, batchId);
-        Integer movements = jdbc.queryForObject("""
-            select count(*) from inventory_movements
-             where tenant_id = ? and related_import_batch_id = ?
-               and movement_type in ('SUMUP_IMPORT', 'ORDER_REFUND')
-            """, Integer.class, tenantId, batchId);
         return new Result(statuses.getOrDefault(ImportRowStatus.IMPORTED.name(), 0),
             statuses.getOrDefault(ImportRowStatus.UPDATED.name(), 0),
             statuses.getOrDefault(ImportRowStatus.DUPLICATE.name(), 0),
-            statuses.getOrDefault(ImportRowStatus.ERROR.name(), 0), orders, movements == null ? 0 : movements);
+            statuses.getOrDefault(ImportRowStatus.ERROR.name(), 0), orders, 0);
     }
 
     private int rowCount(UUID tenantId, UUID batchId, ImportRowStatus status) {
@@ -875,24 +761,12 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
                and (o.manually_modified_after_import = true
                     or o.status not in ('CONFIRMED', 'COMPLETED')
                     or exists (select 1 from order_refunds r
-                                where r.tenant_id = o.tenant_id and r.order_id = o.id)
-                    or (o.inventory_applied = false and exists (
-                        select 1 from inventory_movements m
-                         where m.tenant_id = o.tenant_id and m.related_order_id = o.id
-                           and m.related_import_batch_id = ? and m.movement_type = 'SUMUP_IMPORT')))
-            """, Integer.class, command.tenantId(), command.batchId(), command.batchId());
+                                where r.tenant_id = o.tenant_id and r.order_id = o.id))
+            """, Integer.class, command.tenantId(), command.batchId());
         if (conflicts != null && conflicts > 0) {
             throw new BusinessException("IMPORT_REVERSAL_CONFLICT",
                 "Imported orders were modified, cancelled or refunded and require manual reconciliation",
                 HttpStatus.CONFLICT);
-        }
-        Integer priorReversals = jdbc.queryForObject("""
-            select count(*) from inventory_movements
-             where tenant_id = ? and related_import_batch_id = ? and movement_type = 'SUMUP_REVERSAL'
-            """, Integer.class, command.tenantId(), command.batchId());
-        if (priorReversals != null && priorReversals > 0) {
-            throw new BusinessException("IMPORT_REVERSAL_CONFLICT",
-                "This import already has stock reversal movements", HttpStatus.CONFLICT);
         }
     }
 
@@ -1073,7 +947,7 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
     private record ExternalUpsert(UUID id, UUID linkedOrderId, UpsertOutcome outcome, boolean active) {}
 
     private record OrderState(UUID id, BigDecimal totalAmount, BigDecimal refundAmount, String status,
-                              String paymentStatus, boolean inventoryApplied, String orderNumber,
+                              String paymentStatus, String orderNumber,
                               String currency, String externalTransactionId, Instant orderDate) {}
 
     private record OrderItemState(UUID id, UUID productId, int quantity, int refundedQuantity,
@@ -1082,13 +956,11 @@ public class DefaultSumUpImportCommitter implements SumUpImportCommitter {
     private record RefundAllocation(UUID itemId, UUID productId, int quantity, BigDecimal amount) {}
 
     private record ProductSnapshot(UUID id, String sku, String name, BigDecimal salePrice,
-                                   String currency, int stock) {}
+                                   String currency) {}
 
     private record Line(Row row, ProductSnapshot product, String sku, String name, BigDecimal unitPrice,
                         int quantity, BigDecimal discount, BigDecimal tax, BigDecimal subtotal,
                         BigDecimal total) {}
-
-    private record StockDelta(UUID productId, long quantity) {}
 
     private static final class RowProblem extends RuntimeException {
         private final String code;

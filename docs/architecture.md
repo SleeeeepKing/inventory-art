@@ -8,9 +8,9 @@ Inventory Art 是一个可部署的多租户模块化单体。设计优先级依
 
 - 普通用户的 `tenantId` 只来自认证上下文，不能来自请求体、查询参数或路径中的任意值。
 - `InventoryService` 是 `products.current_stock` 的唯一业务写入口；每次变更与库存流水在同一事务提交。
-- 订单金额由服务端根据明细、折扣、税和币种规则重算，不信任客户端提交的汇总金额。
-- 上传和分析 SumUp 文件不修改订单或库存；只有带分析版本的显式确认才能产生业务数据。
-- 业务历史不通过物理删除“修正”；订单取消、退款和导入撤销通过状态与反向流水表达。
+- 订单必须记录明确的销售金额，商品及数量只是可选销售明细，不能覆盖订单金额。
+- 订单、退款和 SumUp 销售导入不调用 `InventoryService`；库存只能在独立库存模块调整。
+- 业务历史不通过物理删除“修正”；订单取消、退款和导入撤销通过状态变化表达。
 - 不同币种不直接相加；报表按币种分组。
 - 时间在数据库中使用 UTC `TIMESTAMPTZ`，展示和输入范围按 Tenant 时区解释。
 
@@ -39,7 +39,7 @@ flowchart LR
 | `tenant` / `user` | Tenant、用户、个人设置、ADMIN 用户与 Tenant 管理 |
 | `product` | 商品 CRUD、SKU 约束、图片关联、销售聚合视图 |
 | `inventory` | 行锁/版本检查、库存变更、库存流水、批量调整和导出 |
-| `order` / `payment` | 订单状态机、金额计算、支付、取消、退款和库存协调 |
+| `order` / `payment` | 金额必填、商品可选的订单状态机、支付、取消和退款 |
 | `sumup` | 文件上传、解析、映射、预览、幂等导入、外部交易和撤销 |
 | `report` | 集中的数据源纳入策略、KPI、趋势和分组聚合 |
 | `storage` | `StorageService` 以及 Local、MinIO、R2 实现，预签名和对象确认 |
@@ -82,23 +82,15 @@ Pinia 会话 Store 只在内存持有 Access Token。Axios 遇到可刷新认证
 ### 订单与库存
 
 ```mermaid
-sequenceDiagram
-    participant UI as Vue UI
-    participant O as OrderService
-    participant I as InventoryService
-    participant DB as PostgreSQL
-    UI->>O: Confirm order
-    O->>DB: Load tenant-scoped order and items
-    O->>O: Recalculate money and validate state
-    O->>I: Apply item quantities exactly once
-    I->>DB: Lock product rows
-    I->>DB: Check stock, update current_stock
-    I->>DB: Insert inventory_movements
-    O->>DB: Mark inventory_applied and confirmed
-    DB-->>UI: Commit one transaction
+flowchart LR
+    OrdersUI["订单页面"] -->|"金额 + 可选商品数量"| OrderService
+    OrderService -->|"只写销售记录"| OrdersDB[("orders / order_items")]
+    InventoryUI["库存页面"] -->|"独立增减 + 原因"| InventoryService
+    InventoryService -->|"行锁、校验、流水"| InventoryDB[("products.current_stock / inventory_movements")]
+    OrderService -. "无调用关系" .- InventoryService
 ```
 
-草稿不扣库存。重复确认通过订单状态和 `inventory_applied` 幂等保护。已确认订单编辑只应用新旧数量差；取消和有商品明细的退款生成恢复流水。外部退款若只有金额、没有商品数量，则不推测库存影响。
+订单创建、确认、编辑、取消和退款都不会改变库存；商品明细只服务于销量和商品报表。无商品订单仍是完整销售记录，并可按剩余金额退款。库存操作必须由用户进入库存页面，选择商品、增减方向、数量和原因后独立提交。
 
 ### 文件存储
 
