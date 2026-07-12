@@ -16,4 +16,10 @@ describe('mobile-primary layout contract', () => {
     expect(mobileRules).toMatch(/\.el-dialog__footer[^}]*flex-direction:\s*column/s)
     expect(mobileRules).toContain('overflow-x: auto')
   })
+
+  it('stacks report filters and quick actions without scaling translated labels', () => {
+    expect(mobileRules).toMatch(/\.report-filters\s*\{[^}]*flex-direction:\s*column/s)
+    expect(mobileRules).toMatch(/\.quick-actions__list\s*\{[^}]*grid-template-columns:\s*1fr/s)
+    expect(css).toMatch(/\.quick-action\s*\{[^}]*font-size:\s*13px/s)
+  })
 })

@@ -27,6 +27,4 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
       "select p from Product p where p.tenantId=:tenantId and (:enabled is null or p.enabled=:enabled) and (:lowStock=false or p.currentStock<=p.lowStockThreshold) and (:q='' or lower(p.sku) like lower(concat('%',:q,'%')) or lower(p.name) like lower(concat('%',:q,'%')) or lower(coalesce(p.category,'')) like lower(concat('%',:q,'%')) or lower(coalesce(p.artistName,'')) like lower(concat('%',:q,'%')))")
   Page<Product> search(
       UUID tenantId, String q, Boolean enabled, boolean lowStock, Pageable pageable);
-
-  Page<Product> findAllByTenantId(UUID tenantId, Pageable pageable);
 }

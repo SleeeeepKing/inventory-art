@@ -111,6 +111,10 @@ export interface OrderBatchCreateResponse {
   orders: Array<{ id: string; orderNumber: string }>
 }
 
+export interface OrderBulkDeleteResponse {
+  deletedCount: number
+}
+
 export interface SalesEvent {
   id: string
   name: string

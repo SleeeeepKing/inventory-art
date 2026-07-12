@@ -4,11 +4,15 @@ import { useI18n } from 'vue-i18n'
 import type { EChartsCoreOption } from 'echarts/core'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
-import { normalizePage } from '@/services/paging'
+import {
+  reportDateParam,
+  reportHourlyAllowed,
+  reportPresetRange,
+  reportRangeMatches,
+  type ReportDateRange,
+} from '@/services/reportFilters'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
-import { useAuthStore } from '@/stores/auth'
-import type { AdminTenant, PageResponse } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ChartCanvas from '@/components/ChartCanvas.vue'
@@ -60,20 +64,17 @@ interface InventoryReport {
 }
 
 const { t, te } = useI18n()
-const auth = useAuthStore()
 const { showError } = useApiFeedback()
 const { money, number } = useFormatters()
 const loading = ref(false)
 const dashboard = ref<Dashboard | null>(null)
 const inventory = ref<InventoryReport | null>(null)
-const tenants = ref<AdminTenant[]>([])
-const tenantId = ref('')
 const currency = ref('')
-const granularity = ref<'DAY' | 'HOUR'>('DAY')
-const today = new Date()
-const start = new Date(today)
-start.setDate(today.getDate() - 29)
-const range = ref<[Date, Date]>([start, today])
+const appliedGranularity = ref<'DAY' | 'HOUR'>('DAY')
+const draftGranularity = ref<'DAY' | 'HOUR'>('DAY')
+const appliedRange = ref<ReportDateRange>(reportPresetRange(30))
+const draftRange = ref<ReportDateRange | null>(reportPresetRange(30))
+const hourlyAllowed = computed(() => reportHourlyAllowed(draftRange.value))
 
 const current = computed(
   () =>
@@ -118,40 +119,27 @@ const trendOption = computed<EChartsCoreOption>(() => ({
   ],
 }))
 
-function dateParam(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-async function loadTenants() {
-  if (!auth.isAdmin) return
-  const { data } = await api.get<PageResponse<AdminTenant> | AdminTenant[]>('/admin/tenants', {
-    params: { page: 0, size: 100 },
-  })
-  tenants.value = normalizePage(data, 0, 100).items
-}
-
 async function load() {
-  if (!range.value?.length) return
   loading.value = true
   try {
     const params = {
-      start: dateParam(range.value[0]),
-      end: dateParam(range.value[1]),
-      granularity: granularity.value,
-      tenantId: auth.isAdmin ? tenantId.value || undefined : undefined,
+      start: reportDateParam(appliedRange.value[0]),
+      end: reportDateParam(appliedRange.value[1]),
+      granularity: appliedGranularity.value,
     }
-    const base = auth.isAdmin ? '/admin/reports' : '/reports'
     const [financialResponse, inventoryResponse] = await Promise.all([
-      api.get<Dashboard>(`${base}/dashboard`, { params }),
-      api.get<InventoryReport>(`${base}/inventory-sales`, { params }),
+      api.get<Dashboard>('/reports/dashboard', { params }),
+      api.get<InventoryReport>('/reports/inventory-sales', { params }),
     ])
     dashboard.value = financialResponse.data
     inventory.value = inventoryResponse.data
     if (!financialResponse.data.currencies.some((metric) => metric.currency === currency.value)) {
-      currency.value = financialResponse.data.currencies[0]?.currency ?? ''
+      currency.value =
+        financialResponse.data.currencies.find(
+          (metric) => metric.currency === financialResponse.data.defaultCurrency,
+        )?.currency ??
+        financialResponse.data.currencies[0]?.currency ??
+        ''
     }
   } catch (error) {
     showError(error)
@@ -160,16 +148,32 @@ async function load() {
   }
 }
 
-async function initialize() {
-  try {
-    await loadTenants()
-    await load()
-  } catch (error) {
-    showError(error)
+function setPreset(days: number) {
+  draftRange.value = reportPresetRange(days)
+  normalizeDraftGranularity()
+}
+
+function normalizeDraftGranularity() {
+  if (!hourlyAllowed.value && draftGranularity.value === 'HOUR') {
+    draftGranularity.value = 'DAY'
   }
 }
 
-onMounted(initialize)
+async function applyFilters() {
+  if (!draftRange.value) return
+  appliedRange.value = draftRange.value.map((date) => new Date(date)) as ReportDateRange
+  appliedGranularity.value = draftGranularity.value
+  await load()
+}
+
+async function resetFilters() {
+  draftRange.value = reportPresetRange(30)
+  draftGranularity.value = 'DAY'
+  currency.value = ''
+  await applyFilters()
+}
+
+onMounted(load)
 </script>
 
 <template>
@@ -186,42 +190,64 @@ onMounted(initialize)
       </template>
     </PageHeader>
 
-    <section class="panel report-filters">
-      <ElSelect
-        v-if="auth.isAdmin"
-        v-model="tenantId"
-        clearable
-        filterable
-        :placeholder="t('reports.allTenants')"
-        @change="load"
-      >
-        <ElOption
-          v-for="tenant in tenants"
-          :key="tenant.id"
-          :label="tenant.name"
-          :value="tenant.id"
+    <section class="panel report-filters" :aria-label="t('reports.filters')">
+      <div class="report-period">
+        <div class="report-filter__label">
+          <span>{{ t('reports.period') }}</span>
+          <small>{{ t('reports.periodHint') }}</small>
+        </div>
+        <div class="report-period__rail" aria-hidden="true"><i /><span /><i /></div>
+        <div class="report-presets" :aria-label="t('reports.quickRanges')">
+          <button
+            v-for="days in [7, 30, 90]"
+            :key="days"
+            type="button"
+            :class="{ active: reportRangeMatches(draftRange, days) }"
+            :aria-pressed="reportRangeMatches(draftRange, days)"
+            @click="setPreset(days)"
+          >
+            {{ t('reports.lastDays', { count: days }) }}
+          </button>
+        </div>
+        <ElDatePicker
+          v-model="draftRange"
+          type="daterange"
+          range-separator="—"
+          :start-placeholder="t('reports.startDate')"
+          :end-placeholder="t('reports.endDate')"
+          @change="normalizeDraftGranularity"
         />
-      </ElSelect>
-      <ElDatePicker
-        v-model="range"
-        type="daterange"
-        range-separator="—"
-        :start-placeholder="t('admin.fromDate')"
-        :end-placeholder="t('admin.toDate')"
-        @change="load"
-      />
-      <ElSelect v-model="granularity" @change="load">
-        <ElOption :label="t('reports.byDay')" value="DAY" />
-        <ElOption :label="t('reports.byHour')" value="HOUR" :disabled="auth.isAdmin && !tenantId" />
-      </ElSelect>
-      <ElSelect v-if="dashboard?.currencies.length" v-model="currency">
-        <ElOption
-          v-for="metric in dashboard.currencies"
-          :key="metric.currency"
-          :label="metric.currency"
-          :value="metric.currency"
-        />
-      </ElSelect>
+      </div>
+
+      <div class="report-filter-field">
+        <label>{{ t('reports.granularity') }}</label>
+        <ElRadioGroup v-model="draftGranularity">
+          <ElRadioButton value="DAY">{{ t('reports.byDay') }}</ElRadioButton>
+          <ElRadioButton value="HOUR" :disabled="!hourlyAllowed">{{
+            t('reports.byHour')
+          }}</ElRadioButton>
+        </ElRadioGroup>
+        <small v-if="!hourlyAllowed">{{ t('reports.hourlyLimit') }}</small>
+      </div>
+
+      <div class="report-filter-field report-currency">
+        <label>{{ t('reports.currency') }}</label>
+        <ElSelect v-model="currency" :disabled="!dashboard?.currencies.length">
+          <ElOption
+            v-for="metric in dashboard?.currencies ?? []"
+            :key="metric.currency"
+            :label="metric.currency"
+            :value="metric.currency"
+          />
+        </ElSelect>
+      </div>
+
+      <div class="report-filter-actions">
+        <ElButton @click="resetFilters">{{ t('common.reset') }}</ElButton>
+        <ElButton type="primary" :loading="loading" :disabled="!draftRange" @click="applyFilters">{{
+          t('reports.applyFilters')
+        }}</ElButton>
+      </div>
     </section>
 
     <section v-if="current" class="metric-grid">
@@ -239,7 +265,9 @@ onMounted(initialize)
     <section class="report-grid">
       <article class="panel chart-panel">
         <div class="panel-heading">
-          <h2>{{ granularity === 'HOUR' ? t('reports.hourlySales') : t('reports.dailySales') }}</h2>
+          <h2>
+            {{ appliedGranularity === 'HOUR' ? t('reports.hourlySales') : t('reports.dailySales') }}
+          </h2>
           <small v-if="dashboard">{{
             t('reports.timezoneHint', { timezone: dashboard.timezone })
           }}</small>

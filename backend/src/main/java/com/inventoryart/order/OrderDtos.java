@@ -48,6 +48,10 @@ public final class OrderDtos {
       BigDecimal totalAmount,
       List<BatchSuccess> orders) {}
 
+  public record BulkDeleteRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> ids) {}
+
+  public record BulkDeleteResponse(int deletedCount) {}
+
   public record Deleted(UUID id, String orderNumber) {}
 
   public record BatchSuccess(UUID id, String orderNumber) {}

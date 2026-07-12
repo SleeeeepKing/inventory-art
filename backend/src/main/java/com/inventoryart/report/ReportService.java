@@ -2,9 +2,7 @@ package com.inventoryart.report;
 
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
-import com.inventoryart.security.CurrentUser;
 import com.inventoryart.security.CurrentUserService;
-import com.inventoryart.user.UserRole;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Timestamp;
@@ -15,7 +13,6 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -34,34 +31,17 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ReportDtos.Dashboard tenantDashboard(
       LocalDate start, LocalDate end, ReportGranularity granularity) {
-    return dashboard(currentUser.tenantId(), start, end, granularity, false);
-  }
-
-  @Transactional(readOnly = true)
-  public ReportDtos.Dashboard adminDashboard(
-      UUID tenantId, LocalDate start, LocalDate end, ReportGranularity granularity) {
-    CurrentUser user = currentUser.get();
-    if (user.role() != UserRole.ADMIN) {
-      throw new BusinessException(
-          "FORBIDDEN", "Administrator access required", HttpStatus.FORBIDDEN);
-    }
-    if (granularity == ReportGranularity.HOUR && tenantId == null) {
-      throw new BusinessException(
-          "TENANT_REQUIRED_FOR_HOURLY_REPORT",
-          "Select one tenant before using hourly report granularity");
-    }
-    return dashboard(tenantId, start, end, granularity, true);
+    return dashboard(currentUser.tenantId(), start, end, granularity);
   }
 
   private ReportDtos.Dashboard dashboard(
       UUID tenantId,
       LocalDate requestedStart,
       LocalDate requestedEnd,
-      ReportGranularity requestedGranularity,
-      boolean admin) {
+      ReportGranularity requestedGranularity) {
     ReportGranularity granularity =
         requestedGranularity == null ? ReportGranularity.DAY : requestedGranularity;
-    TenantSettings settings = settings(tenantId, admin);
+    TenantSettings settings = settings(tenantId);
     LocalDate end = requestedEnd == null ? LocalDate.now(settings.zone()) : requestedEnd;
     LocalDate start = requestedStart == null ? end.minusDays(29) : requestedStart;
     validateRange(start, end, granularity);
@@ -154,13 +134,7 @@ public class ReportService {
     }
   }
 
-  private TenantSettings settings(UUID tenantId, boolean admin) {
-    if (tenantId == null) {
-      if (!admin) {
-        throw new BusinessException("TENANT_REQUIRED", "Tenant is required", HttpStatus.FORBIDDEN);
-      }
-      return new TenantSettings(ZoneId.of("UTC"), "MULTI");
-    }
+  private TenantSettings settings(UUID tenantId) {
     List<TenantSettings> result =
         jdbc.query(
             "select timezone,default_currency from tenants where id=:id",

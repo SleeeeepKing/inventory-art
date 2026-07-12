@@ -15,8 +15,10 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,6 +88,25 @@ public class OrderService {
         orders.findLocked(id, tenantId).orElseThrow(() -> new NotFoundException("Order"));
     OrderDtos.Deleted deleted = new OrderDtos.Deleted(order.getId(), order.getOrderNumber());
     orders.delete(order);
+    return deleted;
+  }
+
+  @Transactional
+  public List<OrderDtos.Deleted> bulkDelete(UUID tenantId, OrderDtos.BulkDeleteRequest request) {
+    Set<UUID> uniqueIds = new LinkedHashSet<>(request.ids());
+    if (uniqueIds.size() != request.ids().size()) {
+      throw new BusinessException(
+          "DUPLICATE_ORDER_IN_BATCH", "An order can only be selected once per batch");
+    }
+    List<SalesOrder> selected = orders.findAllLocked(tenantId, uniqueIds);
+    if (selected.size() != uniqueIds.size()) {
+      throw new NotFoundException("Order");
+    }
+    List<OrderDtos.Deleted> deleted =
+        selected.stream()
+            .map(order -> new OrderDtos.Deleted(order.getId(), order.getOrderNumber()))
+            .toList();
+    orders.deleteAll(selected);
     return deleted;
   }
 

@@ -12,7 +12,7 @@ ADMIN_BOOTSTRAP_PASSWORD=<至少 12 位的唯一强密码>
 
 应用仅在数据库中还没有 ADMIN 时创建首个管理员，密码使用 BCrypt 保存。确认可以登录后，移除两项 `ADMIN_BOOTSTRAP_*` 变量。随后在“管理 → Tenant”和“管理 → 用户”创建工作空间及普通 USER；新用户的 `preferred_locale` 默认为 `en`。
 
-ADMIN 是跨 Tenant 管理身份，`tenant_id` 必须为 `NULL`。普通 USER 必须关联 Tenant。多个 USER 可以使用同一个 `tenant_id` 共享同一工作空间；朋友需要独立库存时则创建独立 Tenant。
+ADMIN 是跨 Tenant 的账号管理身份，`tenant_id` 必须为 `NULL`，只负责 Tenant、账号和审计，不访问订单、商品、库存、展会或报表。普通 USER 必须关联 Tenant。多个 USER 可以使用同一个 `tenant_id` 共享同一工作空间；朋友需要独立库存时则创建独立 Tenant。
 
 ## 紧急 SQL 方式
 

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowRight, Lock, Message, TrendCharts } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { homeRouteName } from '@/router'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { setAppLocale } from '@/i18n'
 import type { SupportedLocale } from '@/types/api'
@@ -23,7 +24,10 @@ const languages: Array<{ value: SupportedLocale; label: string }> = [
 async function submit() {
   try {
     await auth.login(form.username.trim(), form.password)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    const redirect =
+      typeof route.query.redirect === 'string'
+        ? route.query.redirect
+        : { name: homeRouteName(auth.isAdmin) }
     await router.replace(redirect)
   } catch (error) {
     showError(error)

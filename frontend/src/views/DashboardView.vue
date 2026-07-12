@@ -133,14 +133,18 @@ onMounted(load)
         <div class="panel-heading">
           <h2>{{ t('dashboard.quickActions') }}</h2>
         </div>
-        <button type="button" @click="router.push('/orders')">
-          <DocumentAdd /><span>{{ t('orders.batchRecord') }}</span
-          ><ArrowRight />
-        </button>
-        <button type="button" @click="router.push('/inventory')">
-          <Box /><span>{{ t('dashboard.adjustStock') }}</span
-          ><ArrowRight />
-        </button>
+        <div class="quick-actions__list">
+          <button class="quick-action" type="button" @click="router.push('/orders')">
+            <span class="quick-action__icon"><DocumentAdd /></span>
+            <span>{{ t('orders.batchRecord') }}</span>
+            <ArrowRight />
+          </button>
+          <button class="quick-action" type="button" @click="router.push('/inventory')">
+            <span class="quick-action__icon" data-tone="teal"><Box /></span>
+            <span>{{ t('dashboard.adjustStock') }}</span>
+            <ArrowRight />
+          </button>
+        </div>
       </article>
     </section>
 

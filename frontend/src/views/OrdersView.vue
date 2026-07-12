@@ -6,16 +6,27 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
 import { nearestEnabledEventId } from '@/services/events'
+import { currentOrderDate, pageAfterBulkDelete } from '@/services/orderEntry'
 import { advanceAmountEntry, submittedAmounts } from '@/services/rapidEntry'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Order, OrderBatchCreateResponse, PageResponse, SalesEvent } from '@/types/api'
+import type {
+  Order,
+  OrderBatchCreateResponse,
+  OrderBulkDeleteResponse,
+  PageResponse,
+  SalesEvent,
+} from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 interface FocusableInput {
   focus?: () => void
+}
+
+interface SelectableTable {
+  clearSelection?: () => void
 }
 
 const { t } = useI18n()
@@ -25,6 +36,7 @@ const { money, dateTime, defaultCurrency } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const deletingId = ref('')
+const bulkDeleting = ref(false)
 const entryOpen = ref(false)
 const editOpen = ref(false)
 const editingOrderId = ref('')
@@ -33,6 +45,8 @@ const pageSize = ref(20)
 const eventFilter = ref('')
 const page = ref<PageResponse<Order>>(normalizePage([]))
 const events = ref<SalesEvent[]>([])
+const selectedOrders = ref<Order[]>([])
+const orderTable = ref<SelectableTable | null>(null)
 const amountInputs = ref<Array<FocusableInput | null>>([])
 const entry = reactive({
   eventId: '',
@@ -54,6 +68,8 @@ const entryTotal = computed(() =>
 )
 
 async function load() {
+  selectedOrders.value = []
+  orderTable.value?.clearSelection?.()
   loading.value = true
   try {
     const [orders, eventResponse] = await Promise.all([
@@ -96,7 +112,7 @@ async function focusAmount(index: number) {
 function openEntry() {
   Object.assign(entry, {
     eventId: nearestEnabledEventId(events.value),
-    orderDate: '',
+    orderDate: currentOrderDate(),
     amounts: [null],
   })
   entryOpen.value = true
@@ -205,6 +221,41 @@ async function deleteOrder(order: Order) {
   }
 }
 
+function selectOrders(rows: Order[]) {
+  selectedOrders.value = rows
+}
+
+async function deleteSelectedOrders() {
+  const selected = [...selectedOrders.value]
+  if (!selected.length) return
+  try {
+    await ElMessageBox.confirm(
+      t('orders.bulkDeleteBody', { count: selected.length }),
+      t('orders.bulkDeleteTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('orders.deleteSelected'),
+        cancelButtonText: t('common.cancel'),
+      },
+    )
+    bulkDeleting.value = true
+    const { data } = await api.post<OrderBulkDeleteResponse>('/orders/bulk-delete', {
+      ids: selected.map((order) => order.id),
+    })
+    ElMessage.success(t('orders.bulkDeleted', { count: data.deletedCount }))
+    currentPage.value = pageAfterBulkDelete(
+      currentPage.value,
+      page.value.items.length,
+      data.deletedCount,
+    )
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') showError(error)
+  } finally {
+    bulkDeleting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -240,6 +291,16 @@ onMounted(load)
         </ElSelect>
         <ElButton @click="router.push('/events')">{{ t('orders.manageEvents') }}</ElButton>
         <ElButton :icon="RefreshRight" @click="load">{{ t('common.refresh') }}</ElButton>
+        <ElButton
+          type="danger"
+          plain
+          :icon="Delete"
+          :disabled="!selectedOrders.length"
+          :loading="bulkDeleting"
+          @click="deleteSelectedOrders"
+        >
+          {{ t('orders.deleteSelectedCount', { count: selectedOrders.length }) }}
+        </ElButton>
         <span class="table-toolbar__count">{{
           t('common.items', { count: page.totalElements })
         }}</span>
@@ -247,15 +308,13 @@ onMounted(load)
 
       <ElTable
         v-if="page.items.length || loading"
+        ref="orderTable"
         v-loading="loading"
         :data="page.items"
         row-key="id"
+        @selection-change="selectOrders"
       >
-        <ElTableColumn prop="orderNumber" :label="t('orders.orderNumber')" min-width="170">
-          <template #default="scope">
-            <code class="order-code">{{ scope.row.orderNumber }}</code>
-          </template>
-        </ElTableColumn>
+        <ElTableColumn type="selection" width="52" />
         <ElTableColumn :label="t('orders.orderedAt')" min-width="180">
           <template #default="scope">{{ dateTime(scope.row.orderDate) }}</template>
         </ElTableColumn>

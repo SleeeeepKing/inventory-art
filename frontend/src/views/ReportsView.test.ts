@@ -1,0 +1,75 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
+import { createPinia } from 'pinia'
+
+const mocks = vi.hoisted(() => ({ get: vi.fn() }))
+
+vi.mock('@/services/api', () => ({
+  api: { get: mocks.get },
+  configureSessionHandlers: vi.fn(),
+  refreshSession: vi.fn(),
+  setAccessToken: vi.fn(),
+}))
+
+import { i18n, setAppLocale } from '@/i18n'
+import ReportsView from './ReportsView.vue'
+
+const dashboard = {
+  timezone: 'Europe/Paris',
+  defaultCurrency: 'EUR',
+  granularity: 'DAY',
+  currencies: [
+    { currency: 'EUR', totalSales: 100, transactionCount: 4, averageTransactionValue: 25 },
+  ],
+  salesTrend: [],
+  byEvent: [],
+}
+
+const inventory = {
+  timezone: 'Europe/Paris',
+  summary: { units: 0, batches: 0 },
+  byProduct: [],
+  byEvent: [],
+}
+
+describe('ReportsView filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setAppLocale('en')
+    mocks.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url.endsWith('inventory-sales') ? inventory : dashboard }),
+    )
+  })
+
+  it('keeps quick ranges as drafts until apply and reset reloads the defaults', async () => {
+    const wrapper = mount(ReportsView, {
+      global: {
+        plugins: [createPinia(), i18n, ElementPlus],
+        stubs: { ChartCanvas: true },
+      },
+    })
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+
+    await wrapper.findAll('.report-presets button')[2].trigger('click')
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAllComponents({ name: 'ElRadioButton' })[1].props('disabled')).toBe(true)
+
+    await wrapper.findAll('.report-filter-actions button')[1].trigger('click')
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledTimes(4)
+    expect(mocks.get.mock.calls.at(-1)?.[1].params).toMatchObject({
+      granularity: 'DAY',
+    })
+
+    await wrapper.findAll('.report-filter-actions button')[0].trigger('click')
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledTimes(6)
+    const resetParams = mocks.get.mock.calls.at(-1)?.[1].params
+    expect(resetParams.granularity).toBe('DAY')
+    expect(
+      (new Date(resetParams.end).getTime() - new Date(resetParams.start).getTime()) / 86_400_000,
+    ).toBe(29)
+  })
+})

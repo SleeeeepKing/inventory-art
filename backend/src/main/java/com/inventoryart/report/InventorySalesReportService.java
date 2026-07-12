@@ -2,9 +2,7 @@ package com.inventoryart.report;
 
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
-import com.inventoryart.security.CurrentUser;
 import com.inventoryart.security.CurrentUserService;
-import com.inventoryart.user.UserRole;
 import java.sql.Date;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -12,7 +10,6 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -42,26 +39,15 @@ public class InventorySalesReportService {
 
   @Transactional(readOnly = true)
   public ReportDtos.InventorySalesReport tenantReport(LocalDate start, LocalDate end) {
-    return report(currentUser.tenantId(), start, end, false);
-  }
-
-  @Transactional(readOnly = true)
-  public ReportDtos.InventorySalesReport adminReport(
-      UUID tenantId, LocalDate start, LocalDate end) {
-    CurrentUser user = currentUser.get();
-    if (user.role() != UserRole.ADMIN) {
-      throw new BusinessException(
-          "FORBIDDEN", "Administrator access required", HttpStatus.FORBIDDEN);
-    }
-    return report(tenantId, start, end, true);
+    return report(currentUser.tenantId(), start, end);
   }
 
   private ReportDtos.InventorySalesReport report(
-      UUID tenantId, LocalDate requestedStart, LocalDate requestedEnd, boolean admin) {
-    Settings settings = settings(tenantId, admin);
+      UUID tenantId, LocalDate requestedStart, LocalDate requestedEnd) {
+    Settings settings = settings(tenantId);
     LocalDate end = requestedEnd == null ? LocalDate.now(settings.zone()) : requestedEnd;
     LocalDate start = requestedStart == null ? end.minusDays(29) : requestedStart;
-    int maxDays = admin && tenantId == null ? 90 : 731;
+    int maxDays = 731;
     if (end.isBefore(start) || start.plusDays(maxDays - 1L).isBefore(end)) {
       throw new BusinessException(
           "INVALID_REPORT_RANGE",
@@ -109,13 +95,7 @@ public class InventorySalesReportService {
                 rs.getLong("batches")));
   }
 
-  private Settings settings(UUID tenantId, boolean admin) {
-    if (tenantId == null) {
-      if (!admin) {
-        throw new BusinessException("TENANT_REQUIRED", "Tenant is required", HttpStatus.FORBIDDEN);
-      }
-      return new Settings(ZoneId.of("UTC"));
-    }
+  private Settings settings(UUID tenantId) {
     List<Settings> result =
         jdbc.query(
             "select timezone from tenants where id=:id",

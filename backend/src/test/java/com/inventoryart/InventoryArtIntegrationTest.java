@@ -34,6 +34,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -231,6 +232,90 @@ class InventoryArtIntegrationTest {
     mvc.perform(delete("/api/v1/orders/{id}", orderId).with(userJwt(fixture)))
         .andExpect(status().isNoContent());
     assertThat(orders.findByIdAndTenantId(orderId, fixture.tenant().getId())).isEmpty();
+  }
+
+  @Test
+  void selectedTransactionsCanBeDeletedAsOneAuditedBatch() throws Exception {
+    Fixture fixture = fixture("bulk-delete");
+    SalesEvent event = event(fixture, "Bulk Expo", "2026-07-10", "2026-07-12");
+    UUID first = createOrder(fixture, event, "2026-07-11T08:15:00Z", "11.00");
+    UUID second = createOrder(fixture, event, "2026-07-11T09:15:00Z", "12.00");
+    UUID retained = createOrder(fixture, event, "2026-07-11T10:15:00Z", "13.00");
+
+    mvc.perform(
+            post("/api/v1/orders/bulk-delete")
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("ids", List.of(first, second)))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.deletedCount").value(2));
+
+    assertThat(orders.findById(first)).isEmpty();
+    assertThat(orders.findById(second)).isEmpty();
+    assertThat(orders.findById(retained)).isPresent();
+    assertThat(audits.findAll())
+        .anyMatch(log -> log.getAction().equals("ORDER_BULK_DELETE"))
+        .filteredOn(log -> log.getAction().equals("ORDER_DELETE"))
+        .extracting(log -> log.getResourceId())
+        .contains(first, second);
+  }
+
+  @Test
+  void bulkDeleteRejectsInvalidSelectionsAtomically() throws Exception {
+    Fixture owner = fixture("bulk-owner");
+    Fixture other = fixture("bulk-other");
+    SalesEvent ownerEvent = event(owner, "Owner Expo", "2026-07-10", "2026-07-12");
+    SalesEvent otherEvent = event(other, "Other Expo", "2026-07-10", "2026-07-12");
+    UUID ownerOrder = createOrder(owner, ownerEvent, "2026-07-11T08:15:00Z", "11.00");
+    UUID otherOrder = createOrder(other, otherEvent, "2026-07-11T08:15:00Z", "12.00");
+
+    mvc.perform(
+            post("/api/v1/orders/bulk-delete")
+                .with(userJwt(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("ids", List.of()))))
+        .andExpect(status().isBadRequest());
+    mvc.perform(
+            post("/api/v1/orders/bulk-delete")
+                .with(userJwt(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("ids", List.of(ownerOrder, ownerOrder)))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DUPLICATE_ORDER_IN_BATCH"));
+    mvc.perform(
+            post("/api/v1/orders/bulk-delete")
+                .with(userJwt(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("ids", List.of(ownerOrder, otherOrder)))))
+        .andExpect(status().isNotFound());
+
+    assertThat(orders.findById(ownerOrder)).isPresent();
+    assertThat(orders.findById(otherOrder)).isPresent();
+  }
+
+  @Test
+  void administratorsAreRestrictedToAccountTenantAndAuditApis() throws Exception {
+    User admin = admin("scope");
+
+    for (String path :
+        List.of("/api/v1/orders", "/api/v1/inventory", "/api/v1/reports/dashboard")) {
+      mvc.perform(get(path).with(adminJwt(admin))).andExpect(status().isForbidden());
+    }
+    for (String path :
+        List.of(
+            "/api/v1/admin/products",
+            "/api/v1/admin/orders",
+            "/api/v1/admin/inventory/movements",
+            "/api/v1/admin/sales-events",
+            "/api/v1/admin/reports/dashboard",
+            "/api/v1/admin/reports/inventory-sales")) {
+      mvc.perform(get(path).with(adminJwt(admin))).andExpect(status().isNotFound());
+    }
+
+    mvc.perform(get("/api/v1/admin/tenants").with(adminJwt(admin))).andExpect(status().isOk());
+    mvc.perform(get("/api/v1/admin/users").with(adminJwt(admin))).andExpect(status().isOk());
+    mvc.perform(get("/api/v1/admin/audit").with(adminJwt(admin))).andExpect(status().isOk());
+    mvc.perform(get("/api/v1/profile").with(adminJwt(admin))).andExpect(status().isOk());
   }
 
   @Test
@@ -456,6 +541,19 @@ class InventoryArtIntegrationTest {
     return new Fixture(tenant, user);
   }
 
+  private User admin(String prefix) {
+    String nonce = UUID.randomUUID().toString().substring(0, 8);
+    return users.save(
+        new User(
+            UUID.randomUUID(),
+            null,
+            prefix + nonce,
+            prefix + nonce + "@test.local",
+            passwords.encode("ValidPassword123!"),
+            "Administrator",
+            UserRole.ADMIN));
+  }
+
   private SalesEvent event(Fixture fixture, String name, String start, String end) {
     return events.save(
         new SalesEvent(
@@ -496,6 +594,7 @@ class InventoryArtIntegrationTest {
           .JwtRequestPostProcessor
       userJwt(Fixture fixture) {
     return jwt()
+        .authorities(new SimpleGrantedAuthority("ROLE_USER"))
         .jwt(
             token ->
                 token
@@ -503,6 +602,19 @@ class InventoryArtIntegrationTest {
                     .claim("username", fixture.user().getUsername())
                     .claim("role", "USER")
                     .claim("tenantId", fixture.tenant().getId().toString()));
+  }
+
+  private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+          .JwtRequestPostProcessor
+      adminJwt(User admin) {
+    return jwt()
+        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        .jwt(
+            token ->
+                token
+                    .subject(admin.getId().toString())
+                    .claim("username", admin.getUsername())
+                    .claim("role", "ADMIN"));
   }
 
   record Fixture(Tenant tenant, User user) {}

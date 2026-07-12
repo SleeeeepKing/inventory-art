@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
         path: 'reports',
         name: 'reports',
         component: () => import('@/views/ReportsView.vue'),
-        meta: { titleKey: 'nav.reports' },
+        meta: { titleKey: 'nav.reports', userOnly: true },
       },
       {
         path: 'profile',
@@ -84,12 +84,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminAuditView.vue'),
         meta: { titleKey: 'nav.audit', adminOnly: true },
       },
-      {
-        path: 'admin/data',
-        name: 'admin-data',
-        component: () => import('@/views/admin/AdminDataView.vue'),
-        meta: { titleKey: 'nav.globalData', adminOnly: true },
-      },
     ],
   },
   {
@@ -105,13 +99,17 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
+export function homeRouteName(isAdmin: boolean) {
+  return isAdmin ? 'admin-tenants' : 'dashboard'
+}
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!auth.initialized) await auth.initialize()
   if (to.meta.requiresAuth && !auth.isAuthenticated)
     return { name: 'login', query: { redirect: to.fullPath } }
-  if (to.meta.guestOnly && auth.isAuthenticated) return { name: 'dashboard' }
+  if (to.meta.guestOnly && auth.isAuthenticated) return { name: homeRouteName(auth.isAdmin) }
   if (to.meta.adminOnly && !auth.isAdmin) return { name: 'dashboard' }
-  if (to.meta.userOnly && auth.isAdmin) return { name: 'reports' }
+  if (to.meta.userOnly && auth.isAdmin) return { name: 'admin-tenants' }
   return true
 })

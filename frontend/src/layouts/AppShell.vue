@@ -11,7 +11,6 @@ import {
   Fold,
   Goods,
   Grid,
-  Histogram,
   List,
   Menu as MenuIcon,
   OfficeBuilding,
@@ -37,14 +36,10 @@ const primaryNav = [
   { to: '/events', key: 'nav.events', icon: Calendar },
   { to: '/reports', key: 'nav.reports', icon: DataAnalysis },
 ]
-const visiblePrimaryNav = computed(() =>
-  auth.isAdmin ? primaryNav.filter((item) => item.to === '/reports') : primaryNav,
-)
 const adminNav = [
   { to: '/admin/tenants', key: 'nav.tenants', icon: OfficeBuilding },
   { to: '/admin/users', key: 'nav.users', icon: UserFilled },
   { to: '/admin/audit', key: 'nav.audit', icon: List },
-  { to: '/admin/data', key: 'nav.globalData', icon: Histogram },
 ]
 const pageTitle = computed(() => (route.meta.titleKey ? t(route.meta.titleKey) : t('app.name')))
 const initials = computed(() =>
@@ -110,14 +105,9 @@ async function signOut() {
       </div>
 
       <nav class="nav-groups">
-        <section>
+        <section v-if="!auth.isAdmin">
           <p class="nav-label">{{ t('nav.operations') }}</p>
-          <RouterLink
-            v-for="item in visiblePrimaryNav"
-            :key="item.to"
-            :to="item.to"
-            class="nav-item"
-          >
+          <RouterLink v-for="item in primaryNav" :key="item.to" :to="item.to" class="nav-item">
             <component :is="item.icon" /><span>{{ t(item.key) }}</span>
           </RouterLink>
         </section>

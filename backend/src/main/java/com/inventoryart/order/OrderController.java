@@ -115,6 +115,25 @@ public class OrderController {
     return response;
   }
 
+  @PostMapping("/bulk-delete")
+  public OrderDtos.BulkDeleteResponse bulkDelete(
+      @Valid @RequestBody OrderDtos.BulkDeleteRequest request) {
+    UUID tenantId = current.tenantId();
+    var deleted = service.bulkDelete(tenantId, request);
+    deleted.forEach(
+        order ->
+            audit.record(
+                tenantId,
+                "ORDER_DELETE",
+                "ORDER",
+                order.id(),
+                "SUCCESS",
+                Map.of("orderNumber", order.orderNumber(), "batch", true)));
+    audit.record(
+        tenantId, "ORDER_BULK_DELETE", "ORDER", null, "SUCCESS", Map.of("orders", deleted.size()));
+    return new OrderDtos.BulkDeleteResponse(deleted.size());
+  }
+
   @PutMapping("/{id}")
   public OrderDtos.Response update(
       @PathVariable UUID id, @Valid @RequestBody OrderDtos.UpdateRequest request) {
