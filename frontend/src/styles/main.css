@@ -222,6 +222,11 @@ body.nav-open { overflow: hidden; }
 .movement-quantity[data-positive="true"] { color: var(--teal); }
 .inline-stock { display: flex; align-items: center; justify-content: space-between; margin: -6px 0 18px; padding: 11px 13px; border-radius: 8px; background: var(--paper); color: var(--ink-700); }
 .inline-stock strong { color: var(--ink-950); font: 700 18px var(--utility); }
+.stock-correction-preview { gap: 12px; margin-top: 0; }
+.stock-correction-preview > span { display: flex; align-items: baseline; gap: 7px; }
+.stock-correction-preview > span:nth-child(2) { color: var(--ink-300); font-size: 20px; }
+.stock-correction-preview small { margin-left: auto; color: var(--red); font: 700 12px var(--utility); }
+.stock-correction-preview small[data-positive="true"] { color: var(--teal); }
 .inventory-sale-context { margin-top: 18px; }
 .sale-attribution-date { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 10px; margin: 0 0 16px; padding: 12px 14px; border-left: 3px solid var(--teal); background: var(--teal-soft); }
 .sale-attribution-date span, .sale-attribution-date small { color: var(--ink-500); }
@@ -417,6 +422,9 @@ body.nav-open { overflow: hidden; }
   .form-grid { grid-template-columns: 1fr; }
   .inventory-sale-editor { overflow-x: auto; }
   .inventory-sale-row { min-width: 720px; }
+  .stock-correction-preview { align-items: stretch; flex-wrap: wrap; }
+  .stock-correction-preview > span:nth-child(2) { align-self: center; }
+  .stock-correction-preview small { width: 100%; margin-left: 0; text-align: right; }
   .sale-attribution-date { grid-template-columns: 1fr auto; }
   .sale-attribution-date small { grid-column: 1 / -1; }
   .span-2 { grid-column: auto; }

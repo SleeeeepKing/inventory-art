@@ -38,6 +38,11 @@ public class InventoryController {
     @PostMapping("/adjustments") @org.springframework.transaction.annotation.Transactional public List<MovementResponse> adjust(@Valid @RequestBody AdjustmentBatch request){
         UUID tenant=current.tenantId();List<MovementResponse> result=request.items().stream().map(i->{int delta=signed(i.type(),i.quantity());return MovementResponse.from(service.apply(tenant,i.productId(),delta,i.type(),null,null,i.reference(),blankToNull(i.remark()),current.userId()),null);}).toList();audit.record(tenant,"INVENTORY_ADJUST","INVENTORY_MOVEMENT",null,"SUCCESS",java.util.Map.of("count",result.size()));return result;
     }
+    @PutMapping("/stock/{productId}") public MovementResponse setStock(@PathVariable UUID productId,@Valid @RequestBody StockRequest request){
+        UUID tenant=current.tenantId();InventoryMovement movement=service.setStock(tenant,productId,request.quantity(),blankToNull(request.remark()),current.userId());
+        audit.record(tenant,"INVENTORY_STOCK_CORRECT","INVENTORY_MOVEMENT",movement.getId(),"SUCCESS",Map.of("productId",productId,"stockBefore",movement.getStockBefore(),"stockAfter",movement.getStockAfter()));
+        return MovementResponse.from(movement,null);
+    }
     @PostMapping("/sales") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     public InventorySaleDtos.SaleResponse sale(@Valid @RequestBody InventorySaleDtos.SaleRequest request){
         UUID tenant=current.tenantId();InventorySaleService.Result result=sales.record(tenant,current.userId(),request);InventorySaleBatch batch=result.batch();
@@ -60,5 +65,6 @@ public class InventoryController {
     private String csv(String value){if(value==null)return "";String safe=value;if(!safe.isEmpty()&&"=+-@".indexOf(safe.charAt(0))>=0)safe="'"+safe;return safe.replace("\"","\"\"");}
     public record AdjustmentBatch(@NotEmpty List<@Valid Adjustment> items){}
     public record Adjustment(@NotNull UUID productId,@NotNull MovementType type,@Min(1) int quantity,String reference,String remark){}
+    public record StockRequest(@NotNull @Min(0) Integer quantity,String remark){}
     public record MovementResponse(UUID id,UUID productId,String type,int quantity,int stockBefore,int stockAfter,UUID relatedOrderId,UUID saleBatchId,String salesChannel,UUID eventId,String eventName,LocalDate attributedDate,BigDecimal unitPrice,String currency,BigDecimal attributedAmount,String reference,String remark,UUID operatorId,Instant createdAt){static MovementResponse from(InventoryMovement m,InventorySaleBatch batch){return new MovementResponse(m.getId(),m.getProductId(),m.getMovementType().name(),m.getQuantity(),m.getStockBefore(),m.getStockAfter(),m.getRelatedOrderId(),m.getSaleBatchId(),batch==null?null:batch.getSalesChannel().name(),batch==null?null:batch.getEventId(),batch==null?null:batch.getEventName(),batch==null?null:batch.getAttributedDate(),m.getUnitPrice(),batch==null?null:batch.getCurrency(),InventoryController.attributedAmount(m),m.getReference(),m.getRemark(),m.getOperatorId(),m.getCreatedAt());}}
 }

@@ -24,6 +24,17 @@ public class InventoryService {
         if(saleBatchId==null||unitPrice==null||unitPrice.signum()<0)throw new BusinessException("INVALID_SALE_LINE","Sale batch and non-negative unit price are required");
         return applyInternal(tenantId,productId,-quantity,MovementType.SALE,null,null,saleBatchId,unitPrice.setScale(4,RoundingMode.HALF_UP),"Inventory sale",remark,operator);
     }
+    @Transactional
+    public InventoryMovement setStock(UUID tenantId,UUID productId,int quantity,String remark,UUID operator){
+        if(tenantId==null||productId==null)throw new BusinessException("INVALID_INVENTORY_TARGET","Tenant and product are required");
+        if(quantity<0)throw new BusinessException("INVALID_QUANTITY","Inventory quantity cannot be negative");
+        Product product=products.findLocked(productId,tenantId).orElseThrow(()->new NotFoundException("Product"));
+        int before=product.getCurrentStock();
+        if(before==quantity)throw new BusinessException("STOCK_UNCHANGED","The requested quantity already matches the current stock");
+        product.changeStock(quantity);
+        return movements.save(new InventoryMovement(tenantId,productId,MovementType.STOCK_CORRECTION,
+            quantity-before,before,quantity,null,null,null,null,"Exact stock correction",remark,operator));
+    }
     private InventoryMovement applyInternal(UUID tenantId,UUID productId,int delta,MovementType type,UUID orderId,UUID importBatchId,UUID saleBatchId,BigDecimal unitPrice,String reference,String remark,UUID operator){
         if(tenantId==null||productId==null) throw new BusinessException("INVALID_INVENTORY_TARGET","Tenant and product are required");
         if(type==null) throw new BusinessException("INVALID_MOVEMENT_TYPE","Inventory movement type is required");

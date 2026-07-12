@@ -19,6 +19,7 @@ const errorKeys: Record<string, string> = {
   SALES_EVENT_DISABLED: 'errors.salesEventDisabled',
   SALES_EVENT_IN_USE: 'errors.salesEventInUse',
   INSUFFICIENT_STOCK: 'errors.insufficientStock',
+  STOCK_UNCHANGED: 'inventory.stockUnchanged',
   CURRENCY_MISMATCH: 'errors.currencyMismatch',
   ORDER_ALREADY_CONFIRMED: 'errors.orderAlreadyConfirmed',
   ORDER_ITEMS_REQUIRED: 'errors.orderItemsRequired',

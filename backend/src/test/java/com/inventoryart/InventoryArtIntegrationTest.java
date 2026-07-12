@@ -107,6 +107,9 @@ class InventoryArtIntegrationTest {
         mvc.perform(get("/api/v1/products/{id}",other.getId()).with(userJwt(a))).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         mvc.perform(post("/api/v1/inventory/adjustments").with(userJwt(a)).contentType(MediaType.APPLICATION_JSON).content("{\"items\":[{\"productId\":\""+other.getId()+"\",\"type\":\"ADJUSTMENT_OUT\",\"quantity\":1}]}"))
             .andExpect(status().isNotFound());
+        mvc.perform(put("/api/v1/inventory/stock/{id}",other.getId()).with(userJwt(a))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":2}"))
+            .andExpect(status().isNotFound());
         assertThat(products.findById(other.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
     }
 
@@ -172,6 +175,25 @@ class InventoryArtIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.items").isArray());
         mvc.perform(get("/api/v1/reports/dashboard").with(userJwt(f)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.timezone").value("Europe/Paris"));
+    }
+
+    @Test void exactStockCorrectionDoesNotCreateInventorySales() throws Exception {
+        Fixture fixture=fixture("stock-correction");Product product=product(fixture,"COUNTED",500);
+        mvc.perform(put("/api/v1/inventory/stock/{id}",product.getId()).with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"quantity\":7,\"remark\":\"Physical count\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.type").value("STOCK_CORRECTION"))
+            .andExpect(jsonPath("$.quantity").value(-493))
+            .andExpect(jsonPath("$.stockBefore").value(500))
+            .andExpect(jsonPath("$.stockAfter").value(7))
+            .andExpect(jsonPath("$.attributedAmount").doesNotExist());
+        assertThat(products.findById(product.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
+        mvc.perform(get("/api/v1/reports/inventory-sales").with(userJwt(fixture)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currencies.length()").value(0));
+        mvc.perform(put("/api/v1/inventory/stock/{id}",product.getId()).with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":7}"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("STOCK_UNCHANGED"));
     }
 
     @Test void batchOrdersAndInventorySalesShareEventWithoutDoubleCountingRevenue() throws Exception {
