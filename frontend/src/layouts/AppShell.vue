@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   Box,
+  Calendar,
   Close,
   DataAnalysis,
   Document,
@@ -34,6 +35,7 @@ const primaryNav = [
   { to: '/products', key: 'nav.products', icon: Goods },
   { to: '/inventory', key: 'nav.inventory', icon: Box },
   { to: '/orders', key: 'nav.orders', icon: Document },
+  { to: '/events', key: 'nav.events', icon: Calendar },
   { to: '/imports', key: 'nav.imports', icon: Operation },
   { to: '/reports', key: 'nav.reports', icon: DataAnalysis },
 ]

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Close, Plus, RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
@@ -15,15 +16,13 @@ import StatusPill from '@/components/StatusPill.vue'
 interface DraftItem { productId: string; quantity: number }
 
 const { t } = useI18n()
+const router = useRouter()
 const { showError } = useApiFeedback()
 const { money, dateTime, defaultCurrency } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const dialogOpen = ref(false)
 const batchCreateOpen = ref(false)
-const eventsDialogOpen = ref(false)
-const eventEditorOpen = ref(false)
-const eventSaving = ref(false)
 const batchProcessing = ref(false)
 const batchResultOpen = ref(false)
 const currentPage = ref(1)
@@ -36,8 +35,6 @@ const events = ref<SalesEvent[]>([])
 const selectedOrders = ref<Order[]>([])
 const batchFailures = ref<OrderBatchFailure[]>([])
 const loadedOrderDetails = new Set<string>()
-const today = new Date().toISOString().slice(0, 10)
-const eventEditor = reactive({ id: '', name: '', startDate: today, endDate: today, enabled: true, selectAfterCreate: false })
 const form = reactive({ customerName: '', customerEmail: '', orderDate: new Date().toISOString(), salesChannel: 'OTHER', eventId: '', currency: 'EUR', totalAmount: 0, customerNote: '', items: [] as DraftItem[] })
 const batchForm = reactive({ eventId: '', currency: 'EUR', paymentMethod: 'OTHER', paymentStatus: 'PAID', orderDate: new Date().toISOString(), amounts: [0] as number[] })
 const activeEvents = computed(() => events.value.filter((event) => event.enabled))
@@ -91,30 +88,6 @@ function removeItem(index: number) { form.items.splice(index, 1) }
 function changeChannel(channel: string) { if (channel !== 'EXHIBITION') form.eventId = '' }
 function selectEvent() { if (form.eventId) form.salesChannel = 'EXHIBITION' }
 
-function openEventEditor(event?: SalesEvent, selectAfterCreate = false) {
-  Object.assign(eventEditor, { id: event?.id || '', name: event?.name || '', startDate: event?.startDate || today, endDate: event?.endDate || today, enabled: event?.enabled ?? true, selectAfterCreate })
-  eventEditorOpen.value = true
-}
-
-async function saveEvent() {
-  const name = eventEditor.name.trim()
-  if (!name || !eventEditor.startDate || !eventEditor.endDate || eventEditor.endDate < eventEditor.startDate) { ElMessage.warning(t('validation.dateRange')); return }
-  eventSaving.value = true
-  try {
-    const { data } = eventEditor.id
-      ? await api.put<SalesEvent>(`/sales-events/${eventEditor.id}`, { name, startDate: eventEditor.startDate, endDate: eventEditor.endDate, enabled: eventEditor.enabled })
-      : await api.post<SalesEvent>('/sales-events', { name, startDate: eventEditor.startDate, endDate: eventEditor.endDate })
-    const { data: refreshed } = await api.get<SalesEvent[]>('/sales-events', { params: { includeDisabled: true } })
-    events.value = refreshed
-    if (!eventEditor.id && eventEditor.selectAfterCreate) {
-      form.eventId = data.id
-      form.salesChannel = 'EXHIBITION'
-    }
-    ElMessage.success(t(eventEditor.id ? 'orders.eventUpdated' : 'orders.eventCreated'))
-    eventEditorOpen.value = false
-  } catch (error) { showError(error) } finally { eventSaving.value = false }
-}
-
 async function createBatchOrders() {
   if (!batchForm.eventId || !batchForm.orderDate || batchForm.amounts.some((amount) => Number(amount) <= 0)) {
     ElMessage.warning(t('errors.validation'))
@@ -136,13 +109,6 @@ async function createBatchOrders() {
   } catch (error) { showError(error) } finally { saving.value = false }
 }
 
-async function toggleEvent(event: SalesEvent, enabled: boolean) {
-  try {
-    await api.post(`/sales-events/${event.id}/enabled`, { enabled })
-    event.enabled = enabled
-    ElMessage.success(t('orders.eventUpdated'))
-  } catch (error) { showError(error) }
-}
 function selectProduct(item: DraftItem) {
   const product = products.value.find((candidate) => candidate.id === item.productId)
   if (product) form.currency = product.currency
@@ -246,7 +212,7 @@ onMounted(load)
         <ElSelect v-model="eventFilter" :placeholder="t('orders.event')" clearable filterable @change="currentPage = 1; load()">
           <ElOption v-for="event in events" :key="event.id" :label="eventLabel(event)" :value="event.id" />
         </ElSelect>
-        <ElButton @click="eventsDialogOpen = true">{{ t('orders.manageEvents') }}</ElButton>
+        <ElButton @click="router.push('/events')">{{ t('orders.manageEvents') }}</ElButton>
         <ElButton :icon="RefreshRight" @click="load">{{ t('common.refresh') }}</ElButton>
         <span class="table-toolbar__count">{{ t('common.items', { count: page.totalElements }) }}</span>
       </div>
@@ -282,7 +248,6 @@ onMounted(load)
           <ElSelect v-model="form.eventId" class="full-width" clearable filterable :placeholder="t('orders.selectEvent')" @change="selectEvent">
             <ElOption v-for="event in activeEvents" :key="event.id" :label="eventLabel(event)" :value="event.id" />
           </ElSelect>
-          <ElButton text :icon="Plus" @click="openEventEditor(undefined, true)">{{ t('orders.addEvent') }}</ElButton>
         </ElFormItem>
         <div class="span-2 order-editor">
           <div class="order-editor__heading"><span><strong>{{ t('orders.items') }}</strong><small>{{ t('orders.itemsOptional') }}</small></span><ElButton text :icon="Plus" @click="addItem">{{ t('orders.addItem') }}</ElButton></div>
@@ -313,28 +278,6 @@ onMounted(load)
         <div class="order-total"><span>{{ t('orders.batchTotal') }}</span><strong>{{ money(batchTotal, batchForm.currency) }}</strong></div>
       </div>
       <template #footer><ElButton @click="batchCreateOpen = false">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="saving" @click="createBatchOrders">{{ saving ? t('common.saving') : t('orders.recordBatch') }}</ElButton></template>
-    </ElDialog>
-
-    <ElDialog v-model="eventsDialogOpen" :title="t('orders.manageEvents')" width="min(680px, 94vw)">
-      <div class="table-toolbar">
-        <ElButton type="primary" :icon="Plus" @click="openEventEditor()">{{ t('orders.addEvent') }}</ElButton>
-      </div>
-      <ElTable :data="events" row-key="id">
-        <ElTableColumn prop="name" :label="t('orders.event')" min-width="260" />
-        <ElTableColumn :label="t('orders.eventDates')" min-width="210"><template #default="scope">{{ scope.row.startDate }} — {{ scope.row.endDate }}</template></ElTableColumn>
-        <ElTableColumn :label="t('common.created')" min-width="170"><template #default="scope">{{ dateTime(scope.row.createdAt) }}</template></ElTableColumn>
-        <ElTableColumn :label="t('common.status')" width="110"><template #default="scope"><ElSwitch :model-value="scope.row.enabled" @change="toggleEvent(scope.row, Boolean($event))" /></template></ElTableColumn>
-        <ElTableColumn :label="t('common.actions')" width="100"><template #default="scope"><ElButton text @click="openEventEditor(scope.row)">{{ t('common.edit') }}</ElButton></template></ElTableColumn>
-      </ElTable>
-    </ElDialog>
-
-    <ElDialog v-model="eventEditorOpen" :title="t(eventEditor.id ? 'orders.editEvent' : 'orders.addEvent')" width="min(480px, 94vw)" append-to-body>
-      <ElForm label-position="top">
-        <ElFormItem :label="t('orders.event')" required><ElInput v-model="eventEditor.name" maxlength="240" show-word-limit /></ElFormItem>
-        <ElFormItem :label="t('orders.eventStartDate')" required><ElDatePicker v-model="eventEditor.startDate" type="date" value-format="YYYY-MM-DD" class="full-width" /></ElFormItem>
-        <ElFormItem :label="t('orders.eventEndDate')" required><ElDatePicker v-model="eventEditor.endDate" type="date" value-format="YYYY-MM-DD" class="full-width" /></ElFormItem>
-      </ElForm>
-      <template #footer><ElButton @click="eventEditorOpen = false">{{ t('common.cancel') }}</ElButton><ElButton type="primary" :loading="eventSaving" @click="saveEvent">{{ eventSaving ? t('common.saving') : t('common.save') }}</ElButton></template>
     </ElDialog>
 
     <ElDialog v-model="batchResultOpen" :title="t('orders.batchFailures')" width="min(620px, 94vw)">

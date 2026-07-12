@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +48,12 @@ public class SalesEventController {
         return result.stream().map(Response::from).toList();
     }
 
+    @GetMapping("/{id}")
+    public Response get(@PathVariable UUID id) {
+        return Response.from(events.findByIdAndTenantId(id, current.tenantId())
+            .orElseThrow(() -> new NotFoundException("Sales event")));
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
@@ -81,6 +88,22 @@ public class SalesEventController {
         event.setEnabled(request.enabled());
         audit.record(tenantId, request.enabled() ? "SALES_EVENT_ENABLE" : "SALES_EVENT_DISABLE", "SALES_EVENT", id, "SUCCESS", Map.of());
         return Response.from(event);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Transactional
+    public void delete(@PathVariable UUID id) {
+        UUID tenantId = current.tenantId();
+        SalesEvent event = events.findByIdAndTenantId(id, tenantId)
+            .orElseThrow(() -> new NotFoundException("Sales event"));
+        if (events.isReferenced(tenantId, id)) {
+            throw new BusinessException("SALES_EVENT_IN_USE",
+                "This sales event has linked orders, imports, or inventory sales and cannot be deleted; disable it instead",
+                HttpStatus.CONFLICT);
+        }
+        events.delete(event);
+        audit.record(tenantId, "SALES_EVENT_DELETE", "SALES_EVENT", id, "SUCCESS", Map.of("name", event.getName()));
     }
 
     private void ensureUnique(UUID tenantId, String name, UUID currentId) {

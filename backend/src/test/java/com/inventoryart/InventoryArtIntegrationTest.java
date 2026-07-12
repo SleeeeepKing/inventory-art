@@ -117,6 +117,18 @@ class InventoryArtIntegrationTest {
             .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value("JAPAN EXPO PARIS 2026"))
             .andReturn().getResponse().getContentAsString();
         UUID eventId=UUID.fromString(json.readTree(created).get("id").asText());
+        String disposable=mvc.perform(post("/api/v1/sales-events").with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"One-off fair\",\"startDate\":\"2026-06-01\",\"endDate\":\"2026-06-01\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID disposableId=UUID.fromString(json.readTree(disposable).get("id").asText());
+        mvc.perform(get("/api/v1/sales-events/{id}",disposableId).with(userJwt(first)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("One-off fair"));
+        mvc.perform(delete("/api/v1/sales-events/{id}",disposableId).with(userJwt(second)))
+            .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/v1/sales-events/{id}",disposableId).with(userJwt(first)))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/sales-events/{id}",disposableId).with(userJwt(first)))
+            .andExpect(status().isNotFound());
 
         mvc.perform(get("/api/v1/sales-events").with(userJwt(second)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
@@ -136,6 +148,8 @@ class InventoryArtIntegrationTest {
         mvc.perform(get("/api/v1/orders").param("eventId",eventId.toString()).with(userJwt(first)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
             .andExpect(jsonPath("$.items[0].eventName").value("JAPAN EXPO PARIS 2026"));
+        mvc.perform(delete("/api/v1/sales-events/{id}",eventId).with(userJwt(first)))
+            .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SALES_EVENT_IN_USE"));
 
         mvc.perform(post("/api/v1/sales-events/{id}/enabled",eventId).with(userJwt(first)).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"enabled\":false}"))

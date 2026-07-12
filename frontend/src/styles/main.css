@@ -140,6 +140,28 @@ body.nav-open { overflow: hidden; }
 .empty-state h3 { margin: 15px 0 6px; font-size: 16px; }
 .empty-state p { max-width: 410px; margin: 0 0 16px; color: var(--ink-500); line-height: 1.55; }
 
+/* Exhibition calendar: dates read like pinned show tickets */
+.event-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--ink-150); border-radius: var(--radius); background: var(--ink-950); color: #fff; box-shadow: var(--shadow-sm); }
+.event-summary > div { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 12px; min-height: 82px; padding: 16px 20px; border-right: 1px solid rgba(255,255,255,.11); }
+.event-summary > div:last-child { border-right: 0; }
+.event-summary svg { width: 24px; color: #f49d8f; }
+.event-summary i { width: 9px; height: 9px; margin-left: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 6px rgba(44,140,131,.15); }
+.event-summary > div:last-child i { background: var(--coral); box-shadow: 0 0 0 6px rgba(236,91,69,.15); }
+.event-summary span { color: rgba(255,255,255,.58); font: 700 10px var(--utility); letter-spacing: .055em; text-transform: uppercase; }
+.event-summary strong { font: 750 30px var(--display); }
+.event-name-cell { display: flex; align-items: center; gap: 12px; }
+.event-date-mark { display: grid; width: 45px; height: 48px; flex: 0 0 45px; place-items: center; border: 1px solid var(--ink-150); border-top: 4px solid var(--coral); border-radius: 8px; background: #fff; color: var(--ink-500); font: 700 8px/1 var(--utility); }
+.event-date-mark b { margin-top: -8px; color: var(--ink-950); font-size: 17px; }
+.event-name-cell > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.event-name-cell strong { overflow: hidden; color: var(--ink-950); text-overflow: ellipsis; white-space: nowrap; }
+.event-name-cell small { color: var(--ink-500); font: 700 9px var(--utility); letter-spacing: .04em; text-transform: uppercase; }
+.event-schedule { display: grid; grid-template-columns: auto minmax(36px, 1fr) auto; align-items: center; gap: 9px; width: min(360px, 100%); }
+.event-schedule > span { color: var(--ink-800); font: 650 11px var(--utility); white-space: nowrap; }
+.event-schedule > i { height: 1px; background: var(--ink-300); }
+.event-schedule > i::before, .event-schedule > i::after { display: block; width: 5px; height: 5px; margin-top: -2px; border-radius: 50%; background: var(--coral); content: ""; }
+.event-schedule > i::after { float: right; margin-top: -5px; }
+.event-schedule small { grid-column: 1 / -1; color: var(--ink-500); font-size: 10px; }
+
 /* Login: the stock track is the single signature gesture */
 .login-page { display: grid; min-height: 100vh; grid-template-columns: minmax(380px, .9fr) minmax(460px, 1.1fr); background: #fff; }
 .login-story { position: relative; display: flex; min-height: 100vh; flex-direction: column; overflow: hidden; padding: 42px clamp(34px, 5vw, 74px); background: var(--ink-950); color: #fff; }
@@ -378,7 +400,9 @@ body.nav-open { overflow: hidden; }
   .user-chip { min-height: 56px; }
   .collapse-control { display: none; }
 
-  .metric-grid, .metric-grid--five { grid-template-columns: 1fr; }
+  .metric-grid, .metric-grid--five, .event-summary { grid-template-columns: 1fr; }
+  .event-summary > div { min-height: 68px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.11); }
+  .event-summary > div:last-child { border-bottom: 0; }
   .inventory-analysis__metrics, .inventory-analysis__groups { grid-template-columns: 1fr; }
   .metric-card { min-height: 112px; }
   .panel { border-radius: 12px; }

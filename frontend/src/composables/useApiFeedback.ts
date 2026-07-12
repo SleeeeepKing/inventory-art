@@ -17,6 +17,7 @@ const errorKeys: Record<string, string> = {
   DUPLICATE_TENANT_SLUG: 'errors.duplicateTenantSlug',
   DUPLICATE_EVENT_NAME: 'errors.duplicateEventName',
   SALES_EVENT_DISABLED: 'errors.salesEventDisabled',
+  SALES_EVENT_IN_USE: 'errors.salesEventInUse',
   INSUFFICIENT_STOCK: 'errors.insufficientStock',
   CURRENCY_MISMATCH: 'errors.currencyMismatch',
   ORDER_ALREADY_CONFIRMED: 'errors.orderAlreadyConfirmed',

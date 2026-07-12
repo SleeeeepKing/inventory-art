@@ -23,6 +23,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'products', name: 'products', component: () => import('@/views/ProductsView.vue'), meta: { titleKey: 'nav.products', userOnly: true } },
       { path: 'inventory', name: 'inventory', component: () => import('@/views/InventoryView.vue'), meta: { titleKey: 'nav.inventory', userOnly: true } },
       { path: 'orders', name: 'orders', component: () => import('@/views/OrdersView.vue'), meta: { titleKey: 'nav.orders', userOnly: true } },
+      { path: 'events', name: 'events', component: () => import('@/views/EventsView.vue'), meta: { titleKey: 'nav.events', userOnly: true } },
       { path: 'imports', name: 'imports', component: () => import('@/views/ImportsView.vue'), meta: { titleKey: 'nav.imports', userOnly: true } },
       { path: 'imports/new', name: 'import-new', component: () => import('@/views/ImportWizardView.vue'), meta: { titleKey: 'import.title', userOnly: true } },
       { path: 'reports', name: 'reports', component: () => import('@/views/ReportsView.vue'), meta: { titleKey: 'nav.reports' } },

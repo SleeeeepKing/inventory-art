@@ -1,6 +1,8 @@
 package com.inventoryart.event;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,4 +13,14 @@ public interface SalesEventRepository extends JpaRepository<SalesEvent, UUID> {
     Optional<SalesEvent> findByIdAndTenantId(UUID id, UUID tenantId);
     Optional<SalesEvent> findByIdAndTenantIdAndEnabledTrue(UUID id, UUID tenantId);
     Optional<SalesEvent> findByTenantIdAndNameIgnoreCase(UUID tenantId, String name);
+    @Query(value = """
+        select exists (
+            select 1 from orders where tenant_id=:tenantId and event_id=:eventId
+            union all
+            select 1 from import_batches where tenant_id=:tenantId and event_id=:eventId
+            union all
+            select 1 from inventory_sale_batches where tenant_id=:tenantId and event_id=:eventId
+        )
+        """, nativeQuery = true)
+    boolean isReferenced(@Param("tenantId") UUID tenantId, @Param("eventId") UUID eventId);
 }
