@@ -49,8 +49,6 @@ describe('DashboardView low stock', () => {
                 id: 'product-1',
                 sku: 'ART-001',
                 name: 'Blue Print',
-                salePrice: 10,
-                currency: 'EUR',
                 currentStock: 1,
                 lowStockThreshold: 2,
                 enabled: true,

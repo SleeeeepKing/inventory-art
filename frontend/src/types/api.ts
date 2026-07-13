@@ -53,9 +53,6 @@ export interface Product {
   sku: string
   name: string
   description?: string
-  salePrice?: number
-  costPrice?: number
-  currency?: string
   currentStock: number
   lowStockThreshold?: number
   enabled: boolean

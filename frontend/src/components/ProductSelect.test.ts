@@ -12,8 +12,6 @@ const product = {
   id: 'product-1',
   sku: 'ART-001',
   name: 'Blue Horizon',
-  salePrice: 10,
-  currency: 'EUR',
   currentStock: 7,
   enabled: true,
   imageUrl: '/files/file-1/preview',

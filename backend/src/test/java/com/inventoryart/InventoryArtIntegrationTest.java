@@ -18,6 +18,8 @@ import com.inventoryart.inventory.InventoryService;
 import com.inventoryart.inventory.MovementType;
 import com.inventoryart.order.OrderRepository;
 import com.inventoryart.product.Product;
+import com.inventoryart.product.ProductFamily;
+import com.inventoryart.product.ProductFamilyRepository;
 import com.inventoryart.product.ProductRepository;
 import com.inventoryart.tenant.Tenant;
 import com.inventoryart.tenant.TenantRepository;
@@ -76,6 +78,7 @@ class InventoryArtIntegrationTest {
   @Autowired TenantRepository tenants;
   @Autowired UserRepository users;
   @Autowired ProductRepository products;
+  @Autowired ProductFamilyRepository productFamilies;
   @Autowired SalesEventRepository events;
   @Autowired OrderRepository orders;
   @Autowired PasswordEncoder passwords;
@@ -158,13 +161,12 @@ class InventoryArtIntegrationTest {
             "version");
     assertThat(columns("stored_files"))
         .contains(
-            "product_id",
             "product_family_id",
             "preview_object_key",
             "preview_content_type",
             "preview_size",
             "preview_checksum")
-        .doesNotContain("purpose", "resource_type", "resource_id");
+        .doesNotContain("purpose", "resource_type", "resource_id", "product_id");
     assertThat(columns("product_families"))
         .containsExactlyInAnyOrder(
             "id",
@@ -177,7 +179,19 @@ class InventoryArtIntegrationTest {
             "version",
             "created_at",
             "updated_at");
-    assertThat(columns("products")).contains("family_id", "variant_name");
+    assertThat(columns("products"))
+        .containsExactlyInAnyOrder(
+            "id",
+            "tenant_id",
+            "sku",
+            "family_id",
+            "variant_name",
+            "current_stock",
+            "low_stock_threshold",
+            "enabled",
+            "version",
+            "created_at",
+            "updated_at");
   }
 
   @Test
@@ -285,6 +299,30 @@ class InventoryArtIntegrationTest {
                 tenantId,
                 batchId))
         .isEqualTo("ACTIVE");
+    assertThat(
+            migration.queryForObject(
+                "select family_id from products where tenant_id=? and id=?",
+                UUID.class,
+                tenantId,
+                productId))
+        .isEqualTo(productId);
+    assertThat(
+            migration.queryForObject(
+                "select name from product_families where tenant_id=? and id=?",
+                String.class,
+                tenantId,
+                productId))
+        .isEqualTo("Migration product");
+    assertThat(migrationColumns(migration, "products"))
+        .doesNotContain(
+            "name",
+            "category",
+            "artist_name",
+            "description",
+            "image_object_key",
+            "sale_price",
+            "cost_price",
+            "currency");
     jdbc.execute("drop schema " + schema + " cascade");
   }
 
@@ -1326,6 +1364,13 @@ class InventoryArtIntegrationTest {
         table);
   }
 
+  private List<String> migrationColumns(JdbcTemplate migration, String table) {
+    return migration.queryForList(
+        "select column_name from information_schema.columns where table_schema=current_schema() and table_name=?",
+        String.class,
+        table);
+  }
+
   private UUID createOrder(Fixture fixture, SalesEvent event, String orderDate, String amount)
       throws Exception {
     String body =
@@ -1451,19 +1496,17 @@ class InventoryArtIntegrationTest {
   }
 
   private Product product(Fixture fixture, String sku, String category, int stock) {
+    ProductFamily family =
+        productFamilies.save(
+            new ProductFamily(
+                UUID.randomUUID(), fixture.tenant().getId(), "Product", category, null, null));
     Product product =
         products.save(
             new Product(
                 UUID.randomUUID(),
-                fixture.tenant().getId(),
+                family,
+                null,
                 sku + UUID.randomUUID().toString().substring(0, 4),
-                "Product",
-                category,
-                null,
-                null,
-                new BigDecimal("2.00"),
-                new BigDecimal("10.00"),
-                "EUR",
                 2));
     inventory.apply(
         fixture.tenant().getId(),
@@ -1477,19 +1520,11 @@ class InventoryArtIntegrationTest {
   }
 
   private Product productWithSku(Fixture fixture, String sku) {
-    return products.save(
-        new Product(
-            UUID.randomUUID(),
-            fixture.tenant().getId(),
-            sku,
-            "Product",
-            "Test",
-            null,
-            null,
-            new BigDecimal("2.00"),
-            new BigDecimal("10.00"),
-            "EUR",
-            2));
+    ProductFamily family =
+        productFamilies.save(
+            new ProductFamily(
+                UUID.randomUUID(), fixture.tenant().getId(), "Product", "Test", null, null));
+    return products.save(new Product(UUID.randomUUID(), family, null, sku, 2));
   }
 
   private void uploadLocal(JsonNode presigned, String urlField, String headersField, byte[] content)

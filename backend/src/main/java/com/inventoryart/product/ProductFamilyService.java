@@ -8,8 +8,6 @@ import com.inventoryart.inventory.InventoryService;
 import com.inventoryart.inventory.MovementType;
 import com.inventoryart.security.CurrentUserService;
 import com.inventoryart.storage.FileService;
-import com.inventoryart.tenant.TenantRepository;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,7 +29,6 @@ public class ProductFamilyService {
 
   private final ProductFamilyRepository families;
   private final ProductRepository products;
-  private final TenantRepository tenants;
   private final InventoryService inventory;
   private final CurrentUserService current;
   private final AuditService audit;
@@ -41,7 +38,6 @@ public class ProductFamilyService {
   public ProductFamilyService(
       ProductFamilyRepository families,
       ProductRepository products,
-      TenantRepository tenants,
       InventoryService inventory,
       CurrentUserService current,
       AuditService audit,
@@ -49,7 +45,6 @@ public class ProductFamilyService {
       ProductSalesService sales) {
     this.families = families;
     this.products = products;
-    this.tenants = tenants;
     this.inventory = inventory;
     this.current = current;
     this.audit = audit;
@@ -121,19 +116,6 @@ public class ProductFamilyService {
     }
     family.update(request.name(), request.category(), request.artistName(), request.description());
     List<Product> variants = products.findAllByTenantIdAndFamilyId(current.tenantId(), id);
-    for (Product product : variants) {
-      product.update(
-          product.getSku(),
-          family.getName(),
-          family.getCategory(),
-          family.getArtistName(),
-          family.getDescription(),
-          product.getCostPrice(),
-          product.getSalePrice(),
-          product.getCurrency(),
-          product.getLowStockThreshold(),
-          product.isEnabled());
-    }
     audit.record(
         current.tenantId(),
         "PRODUCT_FAMILY_UPDATE",
@@ -162,11 +144,6 @@ public class ProductFamilyService {
 
   private List<Product> createVariants(
       ProductFamily family, List<ProductFamilyController.VariantCreateRequest> requests) {
-    String currency =
-        tenants
-            .findById(family.getTenantId())
-            .orElseThrow(() -> new NotFoundException("Tenant"))
-            .getDefaultCurrency();
     List<Product> created = new ArrayList<>();
     for (ProductFamilyController.VariantCreateRequest request : requests) {
       int threshold =
@@ -178,19 +155,7 @@ public class ProductFamilyService {
       Product product =
           products.save(
               new Product(
-                  UUID.randomUUID(),
-                  family.getTenantId(),
-                  family.getId(),
-                  request.variantName(),
-                  request.sku(),
-                  family.getName(),
-                  family.getCategory(),
-                  family.getArtistName(),
-                  family.getDescription(),
-                  null,
-                  BigDecimal.ZERO,
-                  currency,
-                  threshold));
+                  UUID.randomUUID(), family, request.variantName(), request.sku(), threshold));
       product.updateVariant(
           request.sku(),
           request.variantName(),

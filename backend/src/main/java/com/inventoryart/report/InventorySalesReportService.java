@@ -23,7 +23,7 @@ public class InventorySalesReportService {
         from inventory_sale_lines l
         join inventory_sale_batches b on b.tenant_id=l.tenant_id and b.id=l.sale_batch_id
         join products p on p.tenant_id=l.tenant_id and p.id=l.product_id
-        left join product_families f on f.tenant_id=p.tenant_id and f.id=p.family_id
+        join product_families f on f.tenant_id=p.tenant_id and f.id=p.family_id
         join sales_events e on e.tenant_id=b.tenant_id and e.id=b.event_id
         where (:tenantId is null or l.tenant_id=cast(:tenantId as uuid))
           and b.attributed_date>=:start and b.attributed_date<=:end
@@ -77,9 +77,9 @@ public class InventorySalesReportService {
             "p.id",
             "p.family_id",
             "p.sku",
-            "case when p.variant_name is null or p.variant_name='' then coalesce(f.name,p.name) else coalesce(f.name,p.name) || ' · ' || p.variant_name end",
-            "coalesce(f.image_object_key,p.image_object_key)",
-            "p.id,p.family_id,p.sku,p.variant_name,f.name,f.image_object_key,p.name,p.image_object_key",
+            "case when p.variant_name is null or p.variant_name='' then f.name else f.name || ' · ' || p.variant_name end",
+            "f.image_object_key",
+            "p.id,p.family_id,p.sku,p.variant_name,f.name,f.image_object_key",
             params),
         groups(
             "null::uuid",
@@ -119,7 +119,7 @@ public class InventorySalesReportService {
               rs.getString("label"),
               id == null
                   ? null
-                  : files.catalogImageUrl(id, familyId, rs.getString("image_object_key")),
+                  : files.productFamilyImageUrl(familyId, rs.getString("image_object_key")),
               rs.getLong("units"),
               rs.getLong("batches"));
         });

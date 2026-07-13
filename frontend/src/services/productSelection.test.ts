@@ -6,8 +6,6 @@ const product = (id: string, enabled = true): Product => ({
   id,
   sku: `SKU-${id}`,
   name: `Product ${id}`,
-  salePrice: 10,
-  currency: 'EUR',
   currentStock: 3,
   enabled,
   imageUrl: `/files/${id}/preview`,

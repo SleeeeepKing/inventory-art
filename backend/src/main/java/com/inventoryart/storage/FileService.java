@@ -96,7 +96,6 @@ public class FileService {
                 PREVIEW_CONTENT_TYPE,
                 request.previewSize(),
                 previewChecksum,
-                request.productId(),
                 identity.productFamilyId(),
                 currentUser.userId()));
     StorageService.PresignedRequest signed =
@@ -140,36 +139,7 @@ public class FileService {
     validatePreviewDimensions(file.getPreviewObjectKey());
     Instant now = Instant.now();
     file.confirm(now);
-    if (file.getProductFamilyId() != null) {
-      confirmFamilyImage(file, now);
-    } else if (file.getProductId() != null) {
-      String previousKey =
-          jdbc.query(
-              "select image_object_key from products where tenant_id=? and id=?",
-              result -> result.next() ? result.getString(1) : null,
-              file.getTenantId(),
-              file.getProductId());
-      int updated =
-          jdbc.update(
-              """
-                update products set image_object_key = ?, updated_at = ?
-                where tenant_id = ? and id = ?
-                """,
-              file.getObjectKey(),
-              Timestamp.from(now),
-              file.getTenantId(),
-              file.getProductId());
-      if (updated != 1) throw new NotFoundException("Product");
-      if (previousKey != null && !previousKey.equals(file.getObjectKey())) {
-        repository
-            .findByObjectKeyAndTenantId(previousKey, file.getTenantId())
-            .ifPresent(
-                previous -> {
-                  previous.deleted(now);
-                  deleteObjectsAfterCommit(previous.getObjectKey(), previous.getPreviewObjectKey());
-                });
-      }
-    }
+    confirmFamilyImage(file, now);
     audit.record(
         file.getTenantId(),
         "FILE_CONFIRM",
@@ -178,23 +148,6 @@ public class FileService {
         "SUCCESS",
         imageAuditDetails(file));
     return new FileDtos.ConfirmFileResponse(file.getId(), file.getStatus().name(), now);
-  }
-
-  @Transactional(readOnly = true)
-  public String productImageUrl(UUID productId, String objectKey) {
-    if (objectKey == null || objectKey.isBlank()) return null;
-    StoredFile file =
-        repository
-            .findByObjectKeyAndTenantId(objectKey, currentUser.tenantId())
-            .filter(candidate -> candidate.getStatus() == StoredFile.Status.CONFIRMED)
-            .filter(candidate -> productId.equals(candidate.getProductId()))
-            .orElse(null);
-    if (file == null) return null;
-    if (file.getPreviewObjectKey() == null
-        && !LEGACY_PREVIEW_TYPES.contains(file.getContentType().toLowerCase(Locale.ROOT))) {
-      return null;
-    }
-    return "/files/%s/preview".formatted(file.getId());
   }
 
   @Transactional(readOnly = true)
@@ -212,13 +165,6 @@ public class FileService {
       return null;
     }
     return "/files/%s/preview".formatted(file.getId());
-  }
-
-  @Transactional(readOnly = true)
-  public String catalogImageUrl(UUID productId, UUID productFamilyId, String objectKey) {
-    return productFamilyId == null
-        ? productImageUrl(productId, objectKey)
-        : productFamilyImageUrl(productFamilyId, objectKey);
   }
 
   @Transactional(readOnly = true)
@@ -249,10 +195,6 @@ public class FileService {
   public void delete(UUID fileId) {
     StoredFile file = required(fileId);
     if (file.getStatus() == StoredFile.Status.DELETED) return;
-    jdbc.update(
-        "update products set image_object_key=null, updated_at=now() where tenant_id=? and image_object_key=?",
-        file.getTenantId(),
-        file.getObjectKey());
     jdbc.update(
         "update product_families set image_object_key=null, updated_at=now() where tenant_id=? and image_object_key=?",
         file.getTenantId(),
@@ -371,15 +313,6 @@ public class FileService {
             file.getTenantId(),
             file.getProductFamilyId());
     if (updated != 1) throw new NotFoundException("Product family");
-    jdbc.update(
-        """
-          update products set image_object_key=?, updated_at=?
-          where tenant_id=? and family_id=?
-          """,
-        file.getObjectKey(),
-        Timestamp.from(now),
-        file.getTenantId(),
-        file.getProductFamilyId());
     if (previousKey != null && !previousKey.equals(file.getObjectKey())) {
       repository
           .findByObjectKeyAndTenantId(previousKey, file.getTenantId())
@@ -393,9 +326,7 @@ public class FileService {
 
   private Map<String, Object> imageAuditDetails(StoredFile file) {
     Map<String, Object> details = new java.util.LinkedHashMap<>();
-    if (file.getProductId() != null) details.put("productId", file.getProductId());
-    if (file.getProductFamilyId() != null)
-      details.put("productFamilyId", file.getProductFamilyId());
+    details.put("productFamilyId", file.getProductFamilyId());
     return Map.copyOf(details);
   }
 

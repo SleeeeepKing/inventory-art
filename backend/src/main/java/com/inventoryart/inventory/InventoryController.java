@@ -331,8 +331,8 @@ public class InventoryController {
                     new ProductDisplay(
                         product.getDisplayName(),
                         product.getSku(),
-                        files.catalogImageUrl(
-                            product.getId(), product.getFamilyId(), product.getImageObjectKey()))));
+                        files.productFamilyImageUrl(
+                            product.getFamilyId(), product.getImageObjectKey()))));
   }
 
   private static String blankToNull(String value) {
@@ -361,8 +361,8 @@ public class InventoryController {
                       product == null ? null : product.getSku(),
                       product == null
                           ? null
-                          : files.catalogImageUrl(
-                              product.getId(), product.getFamilyId(), product.getImageObjectKey()),
+                          : files.productFamilyImageUrl(
+                              product.getFamilyId(), product.getImageObjectKey()),
                       product == null ? 0 : product.getCurrentStock(),
                       line.getQuantity());
                 })

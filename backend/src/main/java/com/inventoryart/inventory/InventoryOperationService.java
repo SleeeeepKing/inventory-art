@@ -196,7 +196,12 @@ public class InventoryOperationService {
     }
     if (productCategories != null && !productCategories.isEmpty()) {
       params.addValue("productCategories", productCategories);
-      sql.append(" and ").append(alias).append(".category in (:productCategories)");
+      sql.append(" and exists (select 1 from product_families filtered_family where ")
+          .append("filtered_family.tenant_id=")
+          .append(alias)
+          .append(".tenant_id and filtered_family.id=")
+          .append(alias)
+          .append(".family_id and filtered_family.category in (:productCategories))");
     }
     return sql.toString();
   }
@@ -264,7 +269,7 @@ public class InventoryOperationService {
         product.getDisplayName(),
         product.getSku(),
         product.getCategory(),
-        files.catalogImageUrl(product.getId(), product.getFamilyId(), product.getImageObjectKey()),
+        files.productFamilyImageUrl(product.getFamilyId(), product.getImageObjectKey()),
         product.getCurrentStock(),
         quantity);
   }

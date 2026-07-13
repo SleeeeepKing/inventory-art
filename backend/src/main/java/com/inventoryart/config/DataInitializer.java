@@ -182,21 +182,7 @@ public class DataInitializer implements ApplicationRunner {
                               "Demo",
                               "Demo Artist",
                               "Development seed product"));
-                  return products.save(
-                      new Product(
-                          UUID.randomUUID(),
-                          tenant.getId(),
-                          family.getId(),
-                          null,
-                          sku,
-                          productName,
-                          "Demo",
-                          "Demo Artist",
-                          "Development seed product",
-                          null,
-                          BigDecimal.ZERO,
-                          "EUR",
-                          3));
+                  return products.save(new Product(UUID.randomUUID(), family, null, sku, 3));
                 });
     if (product.getCurrentStock() == 0) {
       inventory.apply(

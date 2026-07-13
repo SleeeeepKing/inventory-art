@@ -4,14 +4,14 @@
 
 ## 数据与对象
 
-`stored_files` 直接关联商品，分别保存原图和低清预览的对象 key、MIME、大小、checksum 和时间戳。对象 key 由服务端根据当前数据库中的 Tenant slug 与商品 SKU 生成：
+`stored_files` 直接关联商品系列，分别保存原图和低清预览的对象 key、MIME、大小、checksum 和时间戳。新对象 key 由服务端根据当前数据库中的 Tenant slug 与系列 UUID 生成：
 
 ```text
-tenants/{tenantSlug}/products/{encodedSku}/{uuid}/original.{ext}
-tenants/{tenantSlug}/products/{encodedSku}/{uuid}/preview.webp
+tenants/{tenantSlug}/product-families/{familyId}/{uuid}/original.{ext}
+tenants/{tenantSlug}/product-families/{familyId}/{uuid}/preview.webp
 ```
 
-SKU 作为单一路径段进行百分号编码，不能借助 `/` 等字符改变对象层级。Bucket 不开放匿名列举或公开读取。浏览器只在上传时取得短期预签名 PUT URL；日常展示通过带 JWT 的后端预览接口读取，不向浏览器返回 R2 GET URL。
+旧对象 key 不移动、不复制，迁移只改变数据库归属。Bucket 不开放匿名列举或公开读取。浏览器只在上传时取得短期预签名 PUT URL；日常展示通过带 JWT 的后端预览接口读取，不向浏览器返回 R2 GET URL。
 
 ## 配置
 
@@ -31,12 +31,12 @@ SKU 作为单一路径段进行百分号编码，不能借助 `/` 等字符改�
 
 ## 上传和访问
 
-1. 用户选择当前 Tenant 下的商品。
-2. 后端验证商品归属、扩展名、MIME 和大小。
+1. 用户选择当前 Tenant 下的商品系列并选择一张共享图片。
+2. 后端验证系列归属、扩展名、MIME 和大小。
 3. 浏览器在本地生成最长边 480 px、最大 512 KiB 的 WebP 预览，原图与预览分别直传私有 Bucket。
 4. 后端确认两份对象的 MIME、大小、checksum，并校验预览画布不超过 480 × 480。
-5. 成功后关联商品；读取或删除前重新验证文件、商品和 Tenant 的关联。
-6. 商品 API 只返回 `/files/{fileId}/preview`，前端携带 Bearer Token 获取预览 Blob；响应使用 `private, no-store`，不会进入 PWA 缓存。
+5. 成功后关联系列；读取或删除前重新验证文件、系列和 Tenant 的关联。
+6. 系列及其各规格只返回 `/files/{fileId}/preview`，前端携带 Bearer Token 获取预览 Blob；响应使用 `private, no-store`，不会进入 PWA 缓存。
 
 删除或替换图片时同时清理原图、预览和数据库元数据。旧版 JPEG/PNG 对象没有预览时，由后端按 480 px 上限即时转换；旧版 WebP 不回退到原图，以免重新暴露源文件。
 
@@ -47,7 +47,7 @@ SKU 作为单一路径段进行百分号编码，不能借助 `/` 等字符改�
 ## 运维检查
 
 - 验证双对象上传、鉴权预览、替换和删除。
-- 验证商品响应和浏览器网络请求中没有 R2 GET URL。
-- 验证 Tenant A 无法签名、预览或删除 Tenant B 商品图片。
+- 验证系列与规格响应及浏览器网络请求中没有 R2 GET URL。
+- 验证 Tenant A 无法签名、预览或删除 Tenant B 系列图片。
 - 定期比对 `stored_files` 与 Bucket 对象，清理确认无引用的孤儿对象。
 - 备份数据库和 Bucket，并演练一起恢复，避免元数据与对象版本错位。

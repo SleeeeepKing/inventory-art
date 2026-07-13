@@ -10,11 +10,9 @@ import com.inventoryart.security.CurrentUserService;
 import com.inventoryart.storage.FileService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -71,13 +69,12 @@ public class ProductController {
             categoryFilter.isEmpty() ? List.of("") : categoryFilter,
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt")));
     var summaries = sales.summarize(productsPage.getContent());
-    Map<UUID, ProductFamily> familyMap = familyMap(productsPage.getContent());
     return PageResponse.of(
         productsPage.map(
             product ->
                 response(
                     product,
-                    product.getFamilyId() == null ? null : familyMap.get(product.getFamilyId()),
+                    product.getFamily(),
                     summaries.getOrDefault(product.getId(), ProductSalesService.Summary.EMPTY))));
   }
 
@@ -120,20 +117,7 @@ public class ProductController {
             : req.lowStockThreshold();
     Product p =
         products.save(
-            new Product(
-                UUID.randomUUID(),
-                tenant,
-                family.getId(),
-                req.variantName(),
-                req.sku(),
-                req.name(),
-                req.category(),
-                req.artistName(),
-                req.description(),
-                req.costPrice(),
-                req.salePrice() == null ? BigDecimal.ZERO : req.salePrice(),
-                req.currency() == null ? "EUR" : req.currency(),
-                threshold));
+            new Product(UUID.randomUUID(), family, req.variantName(), req.sku(), threshold));
     int initialStock =
         req.initialStock() == null
             ? ProductFamilyService.DEFAULT_INITIAL_STOCK
@@ -183,17 +167,6 @@ public class ProductController {
     ProductFamily family = family(p);
     if (req.name() != null && !req.name().isBlank()) {
       family.update(req.name(), req.category(), req.artistName(), req.description());
-      p.update(
-          req.sku(),
-          family.getName(),
-          family.getCategory(),
-          family.getArtistName(),
-          family.getDescription(),
-          req.costPrice() == null ? p.getCostPrice() : req.costPrice(),
-          req.salePrice() == null ? p.getSalePrice() : req.salePrice(),
-          req.currency() == null ? p.getCurrency() : req.currency(),
-          threshold,
-          enabled);
     }
     p.updateVariant(req.sku(), req.variantName(), threshold, enabled);
     audit.record(
@@ -214,17 +187,7 @@ public class ProductController {
         products
             .findByIdAndTenantId(id, current.tenantId())
             .orElseThrow(() -> new NotFoundException("Product"));
-    p.update(
-        p.getSku(),
-        p.getName(),
-        p.getCategory(),
-        p.getArtistName(),
-        p.getDescription(),
-        p.getCostPrice(),
-        p.getSalePrice(),
-        p.getCurrency(),
-        p.getLowStockThreshold(),
-        false);
+    p.updateVariant(p.getSku(), p.getVariantName(), p.getLowStockThreshold(), false);
     audit.record(
         current.tenantId(), "PRODUCT_DISABLE", "PRODUCT", id, "SUCCESS", java.util.Map.of());
   }
@@ -257,30 +220,14 @@ public class ProductController {
   }
 
   private Response response(Product p, ProductFamily family, ProductSalesService.Summary summary) {
-    String imageUrl =
-        family == null
-            ? files.productImageUrl(p.getId(), p.getImageObjectKey())
-            : files.productFamilyImageUrl(family.getId(), family.getImageObjectKey());
+    String imageUrl = files.productFamilyImageUrl(family.getId(), family.getImageObjectKey());
     return Response.from(p, family, imageUrl, summary);
   }
 
   private ProductFamily family(Product product) {
-    if (product.getFamilyId() == null) return null;
     return families
         .findByIdAndTenantId(product.getFamilyId(), current.tenantId())
         .orElseThrow(() -> new NotFoundException("Product family"));
-  }
-
-  private Map<UUID, ProductFamily> familyMap(List<Product> productList) {
-    List<UUID> ids =
-        productList.stream()
-            .map(Product::getFamilyId)
-            .filter(java.util.Objects::nonNull)
-            .distinct()
-            .toList();
-    if (ids.isEmpty()) return Map.of();
-    return families.findAllByTenantIdAndIdIn(current.tenantId(), ids).stream()
-        .collect(java.util.stream.Collectors.toMap(ProductFamily::getId, family -> family));
   }
 
   public record Request(
@@ -290,9 +237,6 @@ public class ProductController {
       @Size(max = 160) String category,
       @Size(max = 160) String artistName,
       @Size(max = 5000) String description,
-      @DecimalMin("0.0") BigDecimal costPrice,
-      @DecimalMin("0.0") BigDecimal salePrice,
-      @Pattern(regexp = "[A-Za-z]{3}") String currency,
       @Min(0) Integer lowStockThreshold,
       @Min(0) Integer initialStock,
       Boolean enabled,
@@ -308,9 +252,6 @@ public class ProductController {
       String artistName,
       String description,
       String imageUrl,
-      BigDecimal costPrice,
-      BigDecimal salePrice,
-      String currency,
       int currentStock,
       int lowStockThreshold,
       boolean enabled,
@@ -320,11 +261,11 @@ public class ProductController {
       Instant createdAt,
       Instant updatedAt) {
     public static Response from(Product p) {
-      return from(p, null, null, ProductSalesService.Summary.EMPTY);
+      return from(p, p.getFamily(), null, ProductSalesService.Summary.EMPTY);
     }
 
     public static Response from(Product p, String imageUrl) {
-      return from(p, null, imageUrl, ProductSalesService.Summary.EMPTY);
+      return from(p, p.getFamily(), imageUrl, ProductSalesService.Summary.EMPTY);
     }
 
     public static Response from(
@@ -334,14 +275,11 @@ public class ProductController {
           p.getFamilyId(),
           p.getVariantName(),
           p.getSku(),
-          family == null ? p.getName() : family.getName(),
-          family == null ? p.getCategory() : family.getCategory(),
-          family == null ? p.getArtistName() : family.getArtistName(),
-          family == null ? p.getDescription() : family.getDescription(),
+          family.getName(),
+          family.getCategory(),
+          family.getArtistName(),
+          family.getDescription(),
           imageUrl,
-          p.getCostPrice(),
-          p.getSalePrice(),
-          p.getCurrency(),
           p.getCurrentStock(),
           p.getLowStockThreshold(),
           p.isEnabled(),

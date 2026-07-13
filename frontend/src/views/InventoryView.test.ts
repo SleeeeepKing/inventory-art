@@ -198,8 +198,6 @@ describe('InventoryView product identity', () => {
                 name: 'Blue Horizon',
                 sku: 'ART-001',
                 currentStock: 5,
-                salePrice: 10,
-                currency: 'EUR',
                 enabled: false,
                 imageUrl: '/files/file-1/preview',
               },
