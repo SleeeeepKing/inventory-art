@@ -28,6 +28,12 @@ describe('API error feedback', () => {
     expect(fields).toEqual({})
   })
 
+  it('shows invalid credentials instead of session expired for login failures', () => {
+    const { showError } = useApiFeedback()
+    showError(apiError(401, { code: 'INVALID_CREDENTIALS', message: 'internal message' }))
+    expect(mocks.error).toHaveBeenCalledWith('auth.loginFailed')
+  })
+
   it('shows and returns field-level validation details', () => {
     const { showError } = useApiFeedback()
     const fields = showError(

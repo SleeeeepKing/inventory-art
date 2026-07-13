@@ -6,8 +6,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
-import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
@@ -30,13 +28,13 @@ public class StorageConfiguration {
     StaticCredentialsProvider credentials =
         StaticCredentialsProvider.create(
             AwsBasicCredentials.create(storage.getAccessKey(), storage.getSecretKey()));
-    S3Configuration s3Configuration = s3Configuration(provider);
+    S3Configuration s3Configuration =
+        S3Configuration.builder().pathStyleAccessEnabled(provider.equals("minio")).build();
     S3ClientBuilder clientBuilder =
         S3Client.builder()
             .credentialsProvider(credentials)
             .region(Region.of(storage.getRegion()))
             .serviceConfiguration(s3Configuration);
-    configureClientCompatibility(clientBuilder, provider);
     S3Presigner.Builder presignerBuilder =
         S3Presigner.builder()
             .credentialsProvider(credentials)
@@ -53,19 +51,5 @@ public class StorageConfiguration {
     }
     return new S3CompatibleStorageService(
         clientBuilder.build(), presignerBuilder.build(), storage.getBucket());
-  }
-
-  static S3Configuration s3Configuration(String provider) {
-    boolean cloudflareR2 = provider.equals("r2");
-    return S3Configuration.builder()
-        .pathStyleAccessEnabled(provider.equals("minio") || cloudflareR2)
-        .chunkedEncodingEnabled(!cloudflareR2)
-        .build();
-  }
-
-  static void configureClientCompatibility(S3ClientBuilder builder, String provider) {
-    if (!provider.equals("r2")) return;
-    builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED);
-    builder.responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
   }
 }

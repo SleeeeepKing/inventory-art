@@ -10,6 +10,7 @@ const errorKeys: Record<string, string> = {
   INVALID_REQUEST: 'errors.invalidRequest',
   DATA_CONFLICT: 'errors.conflict',
   RESOURCE_NOT_FOUND: 'errors.resourceNotFound',
+  INVALID_CREDENTIALS: 'auth.loginFailed',
   INVALID_PASSWORD: 'errors.invalidPassword',
   DUPLICATE_USER: 'errors.duplicateUser',
   DUPLICATE_SKU: 'errors.duplicateSku',

@@ -80,7 +80,7 @@ export const en = {
     passwordPlaceholder: 'Enter your password',
     signingIn: 'Signing in…',
     secureSession: 'Secure session with rotating refresh tokens',
-    loginFailed: 'The email or password is incorrect.',
+    loginFailed: 'The username or password is incorrect.',
     restoringSession: 'Checking your secure session…',
   },
   dashboard: {

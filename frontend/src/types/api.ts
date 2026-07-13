@@ -73,6 +73,7 @@ export interface InventoryMovement {
   productId: string
   productName?: string
   productSku?: string
+  productImageUrl?: string
   type: string
   quantity: number
   stockBefore?: number

@@ -50,6 +50,32 @@ npm --prefix frontend install
 npm --prefix frontend run dev
 ```
 
+### IDEA 调试生产数据库和 R2
+
+需要从本地前端和 IDEA 后端复现生产数据问题时，后端同时激活 `prod` 和
+`local-prod-debug` profile：
+
+```dotenv
+SPRING_PROFILES_ACTIVE=prod,local-prod-debug
+DATABASE_URL=jdbc:postgresql://PRODUCTION_HOST:5432/PRODUCTION_DATABASE
+DATABASE_USERNAME=...
+DATABASE_PASSWORD=...
+JWT_SECRET=...
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+R2_PUBLIC_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+R2_REGION=auto
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_PRIVATE=PRODUCTION_BUCKET_NAME
+```
+
+前端使用 `VITE_API_BASE_URL=http://localhost:8080/api/v1` 后运行
+`npm --prefix frontend run dev`。`local-prod-debug` 只允许精确的 `localhost` 或
+`127.0.0.1` HTTP origin，并仅放宽本地 Cookie；JWT、R2 完整配置、禁用 seed 等生产校验仍然生效。
+R2 参数应逐项复制生产环境的实际值，尤其要确认 `R2_BUCKET_PRIVATE` 与生产 Bucket 名称完全一致。
+不要把生产凭据写入仓库。该模式会真实读写生产数据库和 Bucket，后端启动时也可能执行 Flyway 迁移。
+
 首次管理员账号的创建方式见 [账号初始化](docs/account-bootstrap.md)。
 
 ## 核心配置

@@ -15,6 +15,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
   Optional<Product> findByTenantIdAndSkuIgnoreCase(UUID tenantId, String sku);
 
+  List<Product> findAllByTenantIdAndIdIn(UUID tenantId, List<UUID> ids);
+
   List<Product> findByTenantIdAndNameIgnoreCase(UUID tenantId, String name);
 
   boolean existsByTenantIdAndSkuIgnoreCase(UUID tenantId, String sku);

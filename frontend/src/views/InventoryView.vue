@@ -125,6 +125,18 @@ function eventLabel(event: SalesEvent) {
 function productFor(id: string) {
   return products.value.find((product) => product.id === id)
 }
+function movementProductName(movement: InventoryMovement) {
+  return productFor(movement.productId)?.name || movement.productName || movement.productId
+}
+function movementProductSku(movement: InventoryMovement) {
+  return productFor(movement.productId)?.sku || movement.productSku
+}
+function movementProductImage(movement: InventoryMovement) {
+  return movement.productImageUrl || productFor(movement.productId)?.imageUrl
+}
+function movementProductInitial(movement: InventoryMovement) {
+  return movementProductName(movement).trim().slice(0, 1).toUpperCase()
+}
 function signedQuantity(movement: InventoryMovement) {
   const quantity = Number(movement.quantity)
   return `${quantity > 0 ? '+' : ''}${number(quantity)}`
@@ -310,11 +322,20 @@ onMounted(load)
         :data="page.items"
         row-key="id"
       >
-        <ElTableColumn :label="t('inventory.product')" min-width="220"
+        <ElTableColumn :label="t('inventory.product')" min-width="260"
           ><template #default="scope"
-            ><div class="cell-stack">
-              <strong>{{ productFor(scope.row.productId)?.name || scope.row.productId }}</strong
-              ><code class="sku-code">{{ productFor(scope.row.productId)?.sku }}</code>
+            ><div class="inventory-product-cell">
+              <div class="product-thumb" aria-hidden="true">
+                <img
+                  v-if="movementProductImage(scope.row)"
+                  :src="movementProductImage(scope.row)"
+                  alt=""
+                /><span v-else>{{ movementProductInitial(scope.row) }}</span>
+              </div>
+              <div class="cell-stack">
+                <strong>{{ movementProductName(scope.row) }}</strong
+                ><code class="sku-code">{{ movementProductSku(scope.row) }}</code>
+              </div>
             </div></template
           ></ElTableColumn
         >

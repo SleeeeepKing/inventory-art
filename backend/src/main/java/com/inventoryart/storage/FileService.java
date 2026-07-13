@@ -242,19 +242,6 @@ public class FileService {
     storage.put(objectKey, input, contentLength, file.getContentType(), Map.of("sha256", checksum));
   }
 
-  void receiveAuthenticatedUpload(
-      UUID fileId, InputStream input, long contentLength, String contentType, String checksum)
-      throws IOException {
-    StoredFile file = required(fileId);
-    validateUpload(file, contentLength, contentType, checksum);
-    storage.put(
-        file.getObjectKey(),
-        input,
-        file.getSize(),
-        file.getContentType(),
-        Map.of("sha256", checksum));
-  }
-
   StoredFile localDownloadFile(String objectKey, long expires, String signature) {
     if (!(storage instanceof LocalStorageService local)) {
       throw new BusinessException(
@@ -275,21 +262,6 @@ public class FileService {
     return repository
         .findByIdAndTenantId(id, currentUser.tenantId())
         .orElseThrow(() -> new NotFoundException("File"));
-  }
-
-  private static void validateUpload(
-      StoredFile file, long contentLength, String contentType, String checksum) {
-    if (file.getStatus() != StoredFile.Status.PENDING) {
-      throw new BusinessException(
-          "FILE_NOT_PENDING", "Only pending files can be uploaded", HttpStatus.CONFLICT);
-    }
-    if ((contentLength >= 0 && contentLength != file.getSize())
-        || !sameContentType(file.getContentType(), contentType)
-        || checksum == null
-        || !file.getChecksum().equalsIgnoreCase(checksum)) {
-      throw new BusinessException(
-          "UPLOAD_CONSTRAINT_MISMATCH", "Upload headers do not match the presigned request");
-    }
   }
 
   private static void validateImage(String contentType, long size) {

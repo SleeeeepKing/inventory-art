@@ -8,7 +8,10 @@ import com.inventoryart.common.PageResponse;
 import com.inventoryart.event.SalesEvent;
 import com.inventoryart.event.SalesEventRepository;
 import com.inventoryart.exception.BusinessException;
+import com.inventoryart.product.Product;
+import com.inventoryart.product.ProductRepository;
 import com.inventoryart.security.CurrentUserService;
+import com.inventoryart.storage.FileService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -50,6 +53,8 @@ public class InventoryController {
   private final InventoryMovementRepository movements;
   private final InventorySaleBatchRepository saleBatches;
   private final SalesEventRepository events;
+  private final ProductRepository products;
+  private final FileService files;
   private final CurrentUserService current;
   private final AuditService audit;
 
@@ -59,6 +64,8 @@ public class InventoryController {
       InventoryMovementRepository movements,
       InventorySaleBatchRepository saleBatches,
       SalesEventRepository events,
+      ProductRepository products,
+      FileService files,
       CurrentUserService current,
       AuditService audit) {
     this.service = service;
@@ -66,6 +73,8 @@ public class InventoryController {
     this.movements = movements;
     this.saleBatches = saleBatches;
     this.events = events;
+    this.products = products;
+    this.files = files;
     this.current = current;
     this.audit = audit;
   }
@@ -178,13 +187,17 @@ public class InventoryController {
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
     Map<UUID, InventorySaleBatch> batches = batches(tenantId, result.getContent());
     Map<UUID, String> eventNames = eventNames(tenantId, batches.values().stream().toList());
+    Map<UUID, ProductDisplay> productDisplays = productDisplays(tenantId, result.getContent());
     return PageResponse.of(
         result.map(
             movement -> {
               UUID saleBatchId = movement.getSaleBatchId();
               InventorySaleBatch batch = saleBatchId == null ? null : batches.get(saleBatchId);
               return MovementResponse.from(
-                  movement, batch, batch == null ? null : eventNames.get(batch.getEventId()));
+                  movement,
+                  batch,
+                  batch == null ? null : eventNames.get(batch.getEventId()),
+                  productDisplays.get(movement.getProductId()));
             }));
   }
 
@@ -268,6 +281,23 @@ public class InventoryController {
         .collect(Collectors.toMap(SalesEvent::getId, SalesEvent::getName));
   }
 
+  private Map<UUID, ProductDisplay> productDisplays(
+      UUID tenantId, List<InventoryMovement> movements) {
+    List<UUID> ids = movements.stream().map(InventoryMovement::getProductId).distinct().toList();
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    return products.findAllByTenantIdAndIdIn(tenantId, ids).stream()
+        .collect(
+            Collectors.toMap(
+                Product::getId,
+                product ->
+                    new ProductDisplay(
+                        product.getName(),
+                        product.getSku(),
+                        files.productImageUrl(product.getId(), product.getImageObjectKey()))));
+  }
+
   private static String blankToNull(String value) {
     return value == null || value.isBlank() ? null : value.trim();
   }
@@ -297,6 +327,9 @@ public class InventoryController {
   public record MovementResponse(
       UUID id,
       UUID productId,
+      String productName,
+      String productSku,
+      String productImageUrl,
       String type,
       int quantity,
       int stockBefore,
@@ -311,9 +344,20 @@ public class InventoryController {
       Instant createdAt) {
     static MovementResponse from(
         InventoryMovement movement, InventorySaleBatch batch, String eventName) {
+      return from(movement, batch, eventName, null);
+    }
+
+    static MovementResponse from(
+        InventoryMovement movement,
+        InventorySaleBatch batch,
+        String eventName,
+        ProductDisplay product) {
       return new MovementResponse(
           movement.getId(),
           movement.getProductId(),
+          product == null ? null : product.name(),
+          product == null ? null : product.sku(),
+          product == null ? null : product.imageUrl(),
           movement.getMovementType().name(),
           movement.getQuantity(),
           movement.getStockBefore(),
@@ -328,4 +372,6 @@ public class InventoryController {
           movement.getCreatedAt());
     }
   }
+
+  private record ProductDisplay(String name, String sku, String imageUrl) {}
 }

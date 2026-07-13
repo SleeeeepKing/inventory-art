@@ -652,6 +652,18 @@ body.nav-open {
   height: 100%;
   object-fit: cover;
 }
+.inventory-product-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+.inventory-product-cell .product-thumb {
+  flex: 0 0 auto;
+}
+.inventory-product-cell .cell-stack {
+  flex: 1;
+}
 .stock-low {
   color: var(--coral-dark);
 }

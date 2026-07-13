@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import axios from 'axios'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
-import { api } from '@/services/api'
-import { uploadPendingFile, type PendingUpload } from '@/services/fileUpload'
+import { api, resolveApiUrl } from '@/services/api'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
@@ -81,14 +81,20 @@ async function uploadImage(productId: string, file: File) {
   const checksumSha256 = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('')
-  const { data } = await api.post<PendingUpload>('/files/presign', {
+  const { data } = await api.post<{
+    uploadUrl: string
+    fileId: string
+    headers?: Record<string, string>
+  }>('/files/presign', {
     originalFilename: file.name,
     contentType: file.type,
     size: file.size,
     checksumSha256,
     productId,
   })
-  await uploadPendingFile(data, file, checksumSha256)
+  await axios.put(resolveApiUrl(data.uploadUrl), file, {
+    headers: { 'Content-Type': file.type, ...data.headers },
+  })
   await api.post(`/files/${data.fileId}/confirm`)
 }
 
