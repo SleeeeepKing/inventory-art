@@ -87,6 +87,81 @@ export interface InventoryMovement {
   attributedDate?: string
 }
 
+export interface InventoryOperationItem {
+  id?: string
+  productId: string
+  productName: string
+  productSku: string
+  productCategory?: string
+  productImageUrl?: string
+  currentStock: number
+  quantity: number
+}
+
+export interface InventoryOperation {
+  id: string
+  kind: 'MOVEMENT' | 'SALE'
+  type: string
+  quantity: number
+  stockBefore?: number
+  stockAfter?: number
+  saleBatchId?: string
+  eventId?: string
+  eventName?: string
+  attributedDate?: string
+  status?: 'ACTIVE' | 'CANCELLED'
+  reference?: string
+  remark?: string
+  createdAt: string
+  updatedAt: string
+  version: number
+  items: InventoryOperationItem[]
+}
+
+export interface InventorySale {
+  id: string
+  eventId: string
+  eventName: string
+  attributedDate: string
+  status: 'ACTIVE' | 'CANCELLED'
+  version: number
+  createdAt: string
+  updatedAt: string
+  items: Array<{
+    id: string
+    productId: string
+    productName: string
+    productSku: string
+    productImageUrl?: string
+    currentStock: number
+    quantity: number
+  }>
+}
+
+export interface ExpenseCategory {
+  id: string
+  name: string
+  enabled: boolean
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EventExpense {
+  id: string
+  eventId: string
+  categoryId: string
+  categoryName: string
+  amount: number
+  currency: string
+  expenseDate: string
+  note?: string
+  status: 'ACTIVE' | 'VOIDED'
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Order {
   id: string
   orderNumber: string

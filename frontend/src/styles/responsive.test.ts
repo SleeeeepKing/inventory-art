@@ -17,6 +17,15 @@ describe('mobile-primary layout contract', () => {
     expect(mobileRules).toContain('overflow-x: auto')
   })
 
+  it('keeps image-aware product choices recognizable on 375–390px screens', () => {
+    expect(css).toMatch(/\.product-option__thumb\s*\{[^}]*width:\s*36px[^}]*height:\s*36px/s)
+    expect(css).toMatch(/\.product-option__copy strong,[^}]*text-overflow:\s*ellipsis/s)
+    expect(css).toMatch(
+      /\.el-select-dropdown__item:has\(\.product-option\)\s*\{[^}]*min-height:\s*48px/s,
+    )
+    expect(mobileRules).toMatch(/\.inventory-sale-row\s*\{[^}]*min-width:\s*420px/s)
+  })
+
   it('stacks report filters and quick actions without scaling translated labels', () => {
     expect(mobileRules).toMatch(/\.report-filters\s*\{[^}]*flex-direction:\s*column/s)
     expect(mobileRules).toMatch(/\.quick-actions__list\s*\{[^}]*grid-template-columns:\s*1fr/s)

@@ -652,6 +652,60 @@ body.nav-open {
   height: 100%;
   object-fit: cover;
 }
+.product-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.2;
+}
+.product-option__thumb {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--ink-150);
+  border-radius: 8px;
+  background: linear-gradient(145deg, #edf3f6, #fff);
+  color: var(--ink-700);
+  font: 700 12px var(--utility);
+}
+.product-option__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.product-option__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.product-option__copy strong,
+.product-option__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-option__copy small {
+  color: var(--ink-500);
+  font: 10px var(--utility);
+}
+.product-option.is-compact .product-option__thumb {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+}
+.product-option.is-compact .product-option__copy small {
+  display: none;
+}
+.el-select-dropdown__item:has(.product-option) {
+  height: auto;
+  min-height: 48px;
+  padding-block: 6px;
+}
 .inventory-product-cell {
   display: flex;
   min-width: 0;
@@ -1305,6 +1359,27 @@ body.nav-open {
 .inventory-sale-row > strong {
   text-align: right;
 }
+.sale-operation-items {
+  display: grid;
+  gap: 8px;
+  padding: 8px 64px;
+}
+.sale-operation-items > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink-100);
+}
+.expense-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.expense-category-table {
+  margin-top: 18px;
+}
 .order-lines {
   padding: 8px 60px;
   background: var(--paper);
@@ -1906,6 +1981,17 @@ body.nav-open {
   }
   .inventory-sale-row {
     grid-template-columns: minmax(220px, 1fr) 100px 44px;
+  }
+  .sale-operation-items {
+    padding-inline: 12px;
+  }
+  .expense-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .expense-toolbar .el-button {
+    width: 100%;
+    margin-left: 0;
   }
   .order-item-row > strong {
     grid-column: 2;

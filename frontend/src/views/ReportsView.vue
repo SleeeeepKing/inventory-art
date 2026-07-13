@@ -21,6 +21,8 @@ import EmptyState from '@/components/EmptyState.vue'
 interface CurrencyMetric {
   currency: string
   totalSales: number
+  totalExpenses: number
+  balance: number
   transactionCount: number
   averageTransactionValue: number
 }
@@ -33,10 +35,22 @@ interface TrendPoint {
 }
 
 interface Breakdown {
+  eventId: string
   label: string
   currency: string
   totalSales: number
+  totalExpenses: number
+  balance: number
   transactions: number
+  expenseCount: number
+}
+
+interface ExpenseBreakdown {
+  categoryId: string
+  label: string
+  currency: string
+  totalExpenses: number
+  expenseCount: number
 }
 
 interface Dashboard {
@@ -46,6 +60,7 @@ interface Dashboard {
   currencies: CurrencyMetric[]
   salesTrend: TrendPoint[]
   byEvent: Breakdown[]
+  expensesByCategory: ExpenseBreakdown[]
 }
 
 interface InventoryGroup {
@@ -83,6 +98,11 @@ const current = computed(
 )
 const eventRows = computed(() =>
   (dashboard.value?.byEvent ?? []).filter((row) => row.currency === current.value?.currency),
+)
+const expenseRows = computed(() =>
+  (dashboard.value?.expensesByCategory ?? []).filter(
+    (row) => row.currency === current.value?.currency,
+  ),
 )
 const localizedLabel = (label: string) =>
   te(`reports.labels.${label}`) ? t(`reports.labels.${label}`) : label || t('reports.unspecified')
@@ -250,11 +270,16 @@ onMounted(load)
       </div>
     </section>
 
-    <section v-if="current" class="metric-grid">
+    <section v-if="current" class="metric-grid metric-grid--five">
       <MetricCard
         :label="t('reports.revenue')"
         :value="money(current.totalSales, current.currency)"
       />
+      <MetricCard
+        :label="t('reports.expenses')"
+        :value="money(current.totalExpenses, current.currency)"
+      />
+      <MetricCard :label="t('reports.balance')" :value="money(current.balance, current.currency)" />
       <MetricCard :label="t('reports.orders')" :value="number(current.transactionCount)" />
       <MetricCard
         :label="t('reports.averageOrderValue')"
@@ -285,14 +310,43 @@ onMounted(load)
           <ElTableColumn :label="t('reports.orders')" align="right">
             <template #default="scope">{{ number(scope.row.transactions) }}</template>
           </ElTableColumn>
+          <ElTableColumn :label="t('reports.expenseEntries')" align="right">
+            <template #default="scope">{{ number(scope.row.expenseCount) }}</template>
+          </ElTableColumn>
           <ElTableColumn :label="t('reports.revenue')" align="right">
             <template #default="scope">{{
               money(scope.row.totalSales, scope.row.currency)
             }}</template>
           </ElTableColumn>
+          <ElTableColumn :label="t('reports.expenses')" align="right">
+            <template #default="scope">{{
+              money(scope.row.totalExpenses, scope.row.currency)
+            }}</template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('reports.balance')" align="right">
+            <template #default="scope">{{ money(scope.row.balance, scope.row.currency) }}</template>
+          </ElTableColumn>
         </ElTable>
         <EmptyState v-else :title="t('reports.noData')" :body="t('reports.noExchange')" />
       </article>
+    </section>
+
+    <section class="panel data-panel">
+      <div class="panel-heading">
+        <h2>{{ t('reports.expensesByCategory') }}</h2>
+      </div>
+      <ElTable v-if="expenseRows.length" :data="expenseRows">
+        <ElTableColumn prop="label" :label="t('expenses.category')" min-width="220" />
+        <ElTableColumn :label="t('reports.expenseEntries')" align="right">
+          <template #default="scope">{{ number(scope.row.expenseCount) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('reports.expenses')" align="right">
+          <template #default="scope">{{
+            money(scope.row.totalExpenses, scope.row.currency)
+          }}</template>
+        </ElTableColumn>
+      </ElTable>
+      <EmptyState v-else :title="t('reports.noExpenses')" :body="t('reports.noExpensesBody')" />
     </section>
 
     <section class="metric-grid">

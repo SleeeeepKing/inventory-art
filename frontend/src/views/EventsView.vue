@@ -2,22 +2,43 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Calendar, Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
+import { Calendar, Coin, Delete, Edit, Plus, Search, Setting } from '@element-plus/icons-vue'
 import { api } from '@/services/api'
 import { useApiFeedback } from '@/composables/useApiFeedback'
-import type { SalesEvent } from '@/types/api'
+import type { EventExpense, ExpenseCategory, PageResponse, SalesEvent } from '@/types/api'
+import { normalizePage } from '@/services/paging'
+import { useFormatters } from '@/composables/useFormatters'
+import { useAuthStore } from '@/stores/auth'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const { t, locale } = useI18n()
 const { showError } = useApiFeedback()
+const { money } = useFormatters()
+const auth = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const dialogOpen = ref(false)
+const expensesOpen = ref(false)
+const expenseFormOpen = ref(false)
+const categoriesOpen = ref(false)
 const search = ref('')
 const status = ref<'ALL' | 'ENABLED' | 'DISABLED'>('ALL')
 const events = ref<SalesEvent[]>([])
 const today = new Date().toISOString().slice(0, 10)
+const selectedEvent = ref<SalesEvent>()
+const expenses = ref<EventExpense[]>([])
+const categories = ref<ExpenseCategory[]>([])
+const emptyExpense = () => ({
+  id: '',
+  version: 0,
+  categoryId: '',
+  amount: 0,
+  expenseDate: today,
+  note: '',
+})
+const expenseForm = reactive(emptyExpense())
+const categoryForm = reactive({ id: '', name: '', enabled: true, version: 0 })
 const emptyForm = () => ({ id: '', name: '', startDate: today, endDate: today, enabled: true })
 const form = reactive(emptyForm())
 
@@ -34,6 +55,9 @@ const filteredEvents = computed(() =>
 const enabledCount = computed(() => events.value.filter((event) => event.enabled).length)
 const upcomingCount = computed(
   () => events.value.filter((event) => event.enabled && event.endDate >= today).length,
+)
+const expenseCurrency = computed(
+  () => auth.user?.tenant?.defaultCurrency || expenses.value[0]?.currency || '—',
 )
 
 async function load() {
@@ -122,6 +146,124 @@ async function remove(event: SalesEvent) {
     await load()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') showError(error)
+  }
+}
+
+async function openExpenses(event: SalesEvent) {
+  selectedEvent.value = event
+  expensesOpen.value = true
+  await loadExpenses()
+}
+
+async function loadExpenses() {
+  if (!selectedEvent.value) return
+  try {
+    const [expenseResponse, categoryResponse] = await Promise.all([
+      api.get<PageResponse<EventExpense>>(`/sales-events/${selectedEvent.value.id}/expenses`, {
+        params: { page: 0, size: 100 },
+      }),
+      api.get<ExpenseCategory[]>('/expense-categories', { params: { includeDisabled: true } }),
+    ])
+    expenses.value = normalizePage(expenseResponse.data).items
+    categories.value = categoryResponse.data
+  } catch (error) {
+    showError(error)
+  }
+}
+
+function openExpenseCreate() {
+  Object.assign(expenseForm, emptyExpense())
+  expenseFormOpen.value = true
+}
+
+function openExpenseEdit(expense: EventExpense) {
+  Object.assign(expenseForm, {
+    id: expense.id,
+    version: expense.version,
+    categoryId: expense.categoryId,
+    amount: Number(expense.amount),
+    expenseDate: expense.expenseDate,
+    note: expense.note || '',
+  })
+  expenseFormOpen.value = true
+}
+
+async function saveExpense() {
+  if (!selectedEvent.value || !expenseForm.categoryId || expenseForm.amount <= 0) {
+    ElMessage.warning(t('errors.validation'))
+    return
+  }
+  saving.value = true
+  try {
+    const payload = {
+      categoryId: expenseForm.categoryId,
+      amount: expenseForm.amount,
+      expenseDate: expenseForm.expenseDate,
+      note: expenseForm.note.trim() || null,
+      version: expenseForm.version,
+    }
+    const base = `/sales-events/${selectedEvent.value.id}/expenses`
+    if (expenseForm.id) await api.put(`${base}/${expenseForm.id}`, payload)
+    else await api.post(base, payload)
+    ElMessage.success(t(expenseForm.id ? 'expenses.updated' : 'expenses.created'))
+    expenseFormOpen.value = false
+    await loadExpenses()
+  } catch (error) {
+    showError(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function voidExpense(expense: EventExpense) {
+  if (!selectedEvent.value) return
+  try {
+    await ElMessageBox.confirm(t('expenses.voidBody'), t('expenses.voidTitle'), {
+      type: 'warning',
+      confirmButtonText: t('expenses.voidAction'),
+    })
+    await api.post(`/sales-events/${selectedEvent.value.id}/expenses/${expense.id}/void`, {
+      version: expense.version,
+    })
+    ElMessage.success(t('expenses.voided'))
+    await loadExpenses()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') showError(error)
+  }
+}
+
+function openCategories() {
+  Object.assign(categoryForm, { id: '', name: '', enabled: true, version: 0 })
+  categoriesOpen.value = true
+}
+
+function editCategory(category: ExpenseCategory) {
+  Object.assign(categoryForm, category)
+}
+
+async function saveCategory() {
+  if (!categoryForm.name.trim()) {
+    ElMessage.warning(t('errors.validation'))
+    return
+  }
+  saving.value = true
+  try {
+    if (categoryForm.id) {
+      await api.put(`/expense-categories/${categoryForm.id}`, {
+        name: categoryForm.name.trim(),
+        enabled: categoryForm.enabled,
+        version: categoryForm.version,
+      })
+    } else {
+      await api.post('/expense-categories', { name: categoryForm.name.trim() })
+    }
+    ElMessage.success(t('expenses.categorySaved'))
+    Object.assign(categoryForm, { id: '', name: '', enabled: true, version: 0 })
+    await loadExpenses()
+  } catch (error) {
+    showError(error)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -238,8 +380,14 @@ onMounted(load)
               @change="toggle(scope.row, Boolean($event))"
           /></template>
         </ElTableColumn>
-        <ElTableColumn :label="t('common.actions')" width="120" fixed="right">
+        <ElTableColumn :label="t('common.actions')" width="180" fixed="right">
           <template #default="scope">
+            <ElButton
+              text
+              :icon="Coin"
+              :aria-label="t('expenses.manage')"
+              @click="openExpenses(scope.row)"
+            />
             <ElButton
               text
               :icon="Edit"
@@ -300,6 +448,148 @@ onMounted(load)
           saving ? t('common.saving') : t('common.save')
         }}</ElButton></template
       >
+    </ElDialog>
+
+    <ElDialog
+      v-model="expensesOpen"
+      :title="t('expenses.eventTitle', { name: selectedEvent?.name || '' })"
+      width="min(900px, 96vw)"
+      destroy-on-close
+    >
+      <div class="expense-toolbar">
+        <ElButton :icon="Setting" @click="openCategories">{{ t('expenses.categories') }}</ElButton>
+        <ElButton type="primary" :icon="Plus" @click="openExpenseCreate">{{
+          t('expenses.add')
+        }}</ElButton>
+      </div>
+      <ElTable v-if="expenses.length" :data="expenses" row-key="id">
+        <ElTableColumn prop="expenseDate" :label="t('expenses.date')" min-width="130" />
+        <ElTableColumn prop="categoryName" :label="t('expenses.category')" min-width="170" />
+        <ElTableColumn :label="t('expenses.amount')" min-width="150" align="right">
+          <template #default="scope">{{ money(scope.row.amount, scope.row.currency) }}</template>
+        </ElTableColumn>
+        <ElTableColumn
+          prop="note"
+          :label="t('expenses.note')"
+          min-width="220"
+          show-overflow-tooltip
+        />
+        <ElTableColumn :label="t('common.actions')" width="140" fixed="right">
+          <template #default="scope">
+            <ElButton
+              text
+              :icon="Edit"
+              :aria-label="t('common.edit')"
+              @click="openExpenseEdit(scope.row)"
+            />
+            <ElButton
+              text
+              type="danger"
+              :icon="Delete"
+              :aria-label="t('expenses.voidAction')"
+              @click="voidExpense(scope.row)"
+            />
+          </template>
+        </ElTableColumn>
+      </ElTable>
+      <EmptyState v-else :title="t('expenses.emptyTitle')" :body="t('expenses.emptyBody')">
+        <ElButton type="primary" :icon="Plus" @click="openExpenseCreate">{{
+          t('expenses.add')
+        }}</ElButton>
+      </EmptyState>
+    </ElDialog>
+
+    <ElDialog
+      v-model="expenseFormOpen"
+      :title="t(expenseForm.id ? 'expenses.edit' : 'expenses.create')"
+      width="min(560px, 94vw)"
+      append-to-body
+    >
+      <ElForm label-position="top">
+        <ElFormItem :label="t('expenses.category')" required>
+          <ElSelect v-model="expenseForm.categoryId" class="full-width" filterable>
+            <ElOption
+              v-for="category in categories"
+              :key="category.id"
+              :label="category.name"
+              :value="category.id"
+              :disabled="!category.enabled && category.id !== expenseForm.categoryId"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <div class="form-grid">
+          <ElFormItem :label="t('expenses.amount')" required>
+            <ElInputNumber
+              v-model="expenseForm.amount"
+              :min="0.01"
+              :precision="2"
+              controls-position="right"
+              class="full-width"
+            />
+          </ElFormItem>
+          <ElFormItem :label="t('expenses.date')" required>
+            <ElDatePicker
+              v-model="expenseForm.expenseDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              class="full-width"
+            />
+          </ElFormItem>
+        </div>
+        <ElFormItem :label="t('expenses.currency')">
+          <ElInput :model-value="expenseCurrency" disabled />
+        </ElFormItem>
+        <ElFormItem :label="`${t('expenses.note')} · ${t('common.optional')}`">
+          <ElInput v-model="expenseForm.note" type="textarea" :rows="3" maxlength="2000" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="expenseFormOpen = false">{{ t('common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="saving" @click="saveExpense">{{
+          saving ? t('common.saving') : t('common.save')
+        }}</ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog
+      v-model="categoriesOpen"
+      :title="t('expenses.categories')"
+      width="min(620px, 94vw)"
+      append-to-body
+    >
+      <ElForm label-position="top">
+        <ElFormItem :label="t('expenses.categoryName')" required>
+          <ElInput v-model="categoryForm.name" maxlength="160" />
+        </ElFormItem>
+        <ElFormItem v-if="categoryForm.id" :label="t('common.status')">
+          <ElSwitch
+            v-model="categoryForm.enabled"
+            :active-text="t('common.enabled')"
+            :inactive-text="t('common.disabled')"
+          />
+        </ElFormItem>
+        <ElButton type="primary" :loading="saving" @click="saveCategory">{{
+          t(categoryForm.id ? 'common.save' : 'expenses.addCategory')
+        }}</ElButton>
+      </ElForm>
+      <ElTable v-if="categories.length" class="expense-category-table" :data="categories">
+        <ElTableColumn prop="name" :label="t('expenses.categoryName')" />
+        <ElTableColumn :label="t('common.status')" width="120">
+          <template #default="scope">{{
+            t(scope.row.enabled ? 'common.enabled' : 'common.disabled')
+          }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('common.actions')" width="90">
+          <template #default="scope">
+            <ElButton
+              text
+              :icon="Edit"
+              :aria-label="t('common.edit')"
+              @click="editCategory(scope.row)"
+            />
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </ElDialog>
   </div>
 </template>

@@ -20,10 +20,37 @@ const dashboard = {
   defaultCurrency: 'EUR',
   granularity: 'DAY',
   currencies: [
-    { currency: 'EUR', totalSales: 100, transactionCount: 4, averageTransactionValue: 25 },
+    {
+      currency: 'EUR',
+      totalSales: 100,
+      totalExpenses: 30,
+      balance: 70,
+      transactionCount: 4,
+      averageTransactionValue: 25,
+    },
   ],
   salesTrend: [],
-  byEvent: [],
+  byEvent: [
+    {
+      eventId: 'event-1',
+      label: 'Paris Expo',
+      currency: 'EUR',
+      totalSales: 100,
+      totalExpenses: 30,
+      balance: 70,
+      transactions: 4,
+      expenseCount: 2,
+    },
+  ],
+  expensesByCategory: [
+    {
+      categoryId: 'category-1',
+      label: 'Transport',
+      currency: 'EUR',
+      totalExpenses: 30,
+      expenseCount: 2,
+    },
+  ],
 }
 
 const inventory = {
@@ -71,5 +98,22 @@ describe('ReportsView filters', () => {
     expect(
       (new Date(resetParams.end).getTime() - new Date(resetParams.start).getTime()) / 86_400_000,
     ).toBe(29)
+  })
+
+  it('shows revenue, expenses, balance, event totals, and category totals', async () => {
+    const wrapper = mount(ReportsView, {
+      global: {
+        plugins: [createPinia(), i18n, ElementPlus],
+        stubs: { ChartCanvas: true },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Sales amount')
+    expect(wrapper.text()).toContain('Expenses')
+    expect(wrapper.text()).toContain('Exhibition balance')
+    expect(wrapper.text()).toContain('Paris Expo')
+    expect(wrapper.text()).toContain('Transport')
+    expect(wrapper.text()).toContain('€70.00')
   })
 })
