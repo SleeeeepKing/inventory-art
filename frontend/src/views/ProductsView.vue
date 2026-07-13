@@ -5,12 +5,14 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { api, resolveApiUrl } from '@/services/api'
+import { createImagePreview, sha256 } from '@/services/imagePreview'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
 import type { PageResponse, Product } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import SecureImage from '@/components/SecureImage.vue'
 
 const { t } = useI18n()
 const { showError } = useApiFeedback()
@@ -77,24 +79,31 @@ function selectImage(uploadFile: UploadFile) {
 }
 
 async function uploadImage(productId: string, file: File) {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-  const checksumSha256 = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
+  const preview = await createImagePreview(file)
+  const [checksumSha256, previewChecksumSha256] = await Promise.all([sha256(file), sha256(preview)])
   const { data } = await api.post<{
     uploadUrl: string
     fileId: string
     headers?: Record<string, string>
+    previewUploadUrl: string
+    previewHeaders?: Record<string, string>
   }>('/files/presign', {
     originalFilename: file.name,
     contentType: file.type,
     size: file.size,
     checksumSha256,
+    previewSize: preview.size,
+    previewChecksumSha256,
     productId,
   })
-  await axios.put(resolveApiUrl(data.uploadUrl), file, {
-    headers: { 'Content-Type': file.type, ...data.headers },
-  })
+  await Promise.all([
+    axios.put(resolveApiUrl(data.uploadUrl), file, {
+      headers: { 'Content-Type': file.type, ...data.headers },
+    }),
+    axios.put(resolveApiUrl(data.previewUploadUrl), preview, {
+      headers: { 'Content-Type': 'image/webp', ...data.previewHeaders },
+    }),
+  ])
   await api.post(`/files/${data.fileId}/confirm`)
 }
 
@@ -187,9 +196,8 @@ onMounted(load)
         <ElTableColumn width="72"
           ><template #default="scope"
             ><div class="product-thumb">
-              <img v-if="scope.row.imageUrl" :src="scope.row.imageUrl" :alt="scope.row.name" /><span
-                v-else
-                >{{ scope.row.name.slice(0, 1).toUpperCase() }}</span
+              <SecureImage :src="scope.row.imageUrl" :alt="scope.row.name"
+                ><span>{{ scope.row.name.slice(0, 1).toUpperCase() }}</span></SecureImage
               >
             </div></template
           ></ElTableColumn

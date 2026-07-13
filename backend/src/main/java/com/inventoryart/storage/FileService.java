@@ -5,10 +5,11 @@ import com.inventoryart.config.AppProperties;
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
 import com.inventoryart.security.CurrentUserService;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -16,6 +17,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -27,12 +29,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @Service
 public class FileService {
   private static final long MAX_IMAGE_SIZE = 10L * 1024 * 1024;
+  private static final long MAX_PREVIEW_SIZE = 512L * 1024;
+  private static final String PREVIEW_CONTENT_TYPE = "image/webp";
   private static final Set<String> IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+  private static final Set<String> LEGACY_PREVIEW_TYPES = Set.of("image/jpeg", "image/png");
 
   private final StoredFileRepository repository;
   private final StorageService storage;
@@ -60,34 +64,63 @@ public class FileService {
   @Transactional
   public FileDtos.PresignUploadResponse presignProductImage(FileDtos.PresignUploadRequest request) {
     validateImage(request.contentType(), request.size());
+    validatePreviewRequest(request.previewSize());
     UUID tenantId = currentUser.tenantId();
-    Integer productExists =
-        jdbc.queryForObject(
-            "select count(*) from products where tenant_id = ? and id = ?",
-            Integer.class,
-            tenantId,
-            request.productId());
-    if (productExists == null || productExists == 0) throw new NotFoundException("Product");
+    StorageIdentity identity =
+        jdbc
+            .query(
+                """
+                  select t.slug, p.sku
+                  from products p
+                  join tenants t on t.id = p.tenant_id
+                  where p.tenant_id = ? and p.id = ?
+                  """,
+                (result, row) -> new StorageIdentity(result.getString(1), result.getString(2)),
+                tenantId,
+                request.productId())
+            .stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Product"));
     String checksum = request.checksumSha256().toLowerCase(Locale.ROOT);
+    String previewChecksum = request.previewChecksumSha256().toLowerCase(Locale.ROOT);
     String extension = extension(request.originalFilename(), request.contentType());
-    String key =
-        "tenants/%s/products/%s/%s%s"
-            .formatted(tenantId, request.productId(), UUID.randomUUID(), extension);
+    String assetRoot =
+        "tenants/%s/products/%s/%s"
+            .formatted(identity.tenantSlug(), keySegment(identity.productSku()), UUID.randomUUID());
+    String key = assetRoot + "/original" + extension;
+    String previewKey = assetRoot + "/preview.webp";
     StoredFile file =
         repository.save(
             StoredFile.pending(
                 tenantId,
                 key,
+                previewKey,
                 safeFilename(request.originalFilename()),
                 request.contentType(),
                 request.size(),
                 checksum,
+                PREVIEW_CONTENT_TYPE,
+                request.previewSize(),
+                previewChecksum,
                 request.productId(),
                 currentUser.userId()));
     StorageService.PresignedRequest signed =
         storage.presignPut(key, request.contentType(), request.size(), checksum, presignValidity);
+    StorageService.PresignedRequest previewSigned =
+        storage.presignPut(
+            previewKey,
+            PREVIEW_CONTENT_TYPE,
+            request.previewSize(),
+            previewChecksum,
+            presignValidity);
     return new FileDtos.PresignUploadResponse(
-        file.getId(), key, signed.url(), signed.headers(), signed.expiresAt());
+        file.getId(),
+        key,
+        signed.url(),
+        signed.headers(),
+        previewSigned.url(),
+        previewSigned.headers(),
+        signed.expiresAt());
   }
 
   @Transactional
@@ -101,19 +134,15 @@ public class FileService {
       throw new BusinessException(
           "FILE_NOT_PENDING", "Only pending files can be confirmed", HttpStatus.CONFLICT);
     }
-    StorageService.ObjectMetadata actual = storage.head(file.getObjectKey());
-    if (actual.size() != file.getSize()) {
-      throw new BusinessException(
-          "FILE_SIZE_MISMATCH", "Uploaded file size does not match the presigned request");
-    }
-    if (!sameContentType(actual.contentType(), file.getContentType())) {
-      throw new BusinessException(
-          "FILE_CONTENT_TYPE_MISMATCH", "Uploaded file type does not match the presigned request");
-    }
-    if (!actualChecksum(file.getObjectKey()).equalsIgnoreCase(file.getChecksum())) {
-      throw new BusinessException(
-          "FILE_CHECKSUM_MISMATCH", "Uploaded file checksum could not be verified");
-    }
+    validateStoredObject(
+        file.getObjectKey(), file.getContentType(), file.getSize(), file.getChecksum(), "FILE");
+    validateStoredObject(
+        file.getPreviewObjectKey(),
+        file.getPreviewContentType(),
+        file.getPreviewSize(),
+        file.getPreviewChecksum(),
+        "PREVIEW");
+    validatePreviewDimensions(file.getPreviewObjectKey());
     Instant now = Instant.now();
     file.confirm(now);
     if (file.getProductId() != null) {
@@ -140,8 +169,8 @@ public class FileService {
             .ifPresent(
                 previous -> {
                   previous.deleted(now);
+                  deleteObjectsAfterCommit(previous.getObjectKey(), previous.getPreviewObjectKey());
                 });
-        deleteObjectAfterCommit(previousKey);
       }
     }
     audit.record(
@@ -155,18 +184,6 @@ public class FileService {
   }
 
   @Transactional(readOnly = true)
-  public FileDtos.DownloadUrlResponse downloadUrl(UUID fileId) {
-    StoredFile file = required(fileId);
-    if (file.getStatus() != StoredFile.Status.CONFIRMED) {
-      throw new BusinessException(
-          "FILE_NOT_AVAILABLE", "File is not available", HttpStatus.CONFLICT);
-    }
-    StorageService.PresignedRequest signed =
-        storage.presignGet(file.getObjectKey(), presignValidity);
-    return new FileDtos.DownloadUrlResponse(signed.url(), signed.expiresAt());
-  }
-
-  @Transactional(readOnly = true)
   public String productImageUrl(UUID productId, String objectKey) {
     if (objectKey == null || objectKey.isBlank()) return null;
     StoredFile file =
@@ -176,14 +193,35 @@ public class FileService {
             .filter(candidate -> productId.equals(candidate.getProductId()))
             .orElse(null);
     if (file == null) return null;
-    String url = storage.presignGet(file.getObjectKey(), presignValidity).url();
-    if (!url.startsWith("/")) return url;
-    URI relative = URI.create(url);
-    return ServletUriComponentsBuilder.fromCurrentContextPath()
-        .path(relative.getPath())
-        .query(relative.getRawQuery())
-        .build(true)
-        .toUriString();
+    if (file.getPreviewObjectKey() == null
+        && !LEGACY_PREVIEW_TYPES.contains(file.getContentType().toLowerCase(Locale.ROOT))) {
+      return null;
+    }
+    return "/files/%s/preview".formatted(file.getId());
+  }
+
+  @Transactional(readOnly = true)
+  public PreviewContent preview(UUID fileId) throws IOException {
+    StoredFile file = required(fileId);
+    if (file.getStatus() != StoredFile.Status.CONFIRMED) {
+      throw new BusinessException(
+          "FILE_NOT_AVAILABLE", "File is not available", HttpStatus.CONFLICT);
+    }
+    if (file.getPreviewObjectKey() != null) {
+      return new PreviewContent(
+          file.getPreviewContentType(),
+          file.getPreviewSize(),
+          storage.get(file.getPreviewObjectKey()));
+    }
+    if (!LEGACY_PREVIEW_TYPES.contains(file.getContentType().toLowerCase(Locale.ROOT))) {
+      throw new NotFoundException("Image preview");
+    }
+    byte[] preview;
+    try (InputStream original = storage.get(file.getObjectKey())) {
+      preview = LegacyImagePreviewer.jpeg(original);
+    }
+    return new PreviewContent(
+        "image/jpeg", (long) preview.length, new ByteArrayInputStream(preview));
   }
 
   @Transactional
@@ -195,7 +233,7 @@ public class FileService {
         file.getTenantId(),
         file.getObjectKey());
     file.deleted(Instant.now());
-    deleteObjectAfterCommit(file.getObjectKey());
+    deleteObjectsAfterCommit(file.getObjectKey(), file.getPreviewObjectKey());
     audit.record(
         file.getTenantId(),
         "FILE_DELETE",
@@ -203,13 +241,6 @@ public class FileService {
         fileId,
         "SUCCESS",
         Map.of("productId", file.getProductId()));
-  }
-
-  @Transactional(readOnly = true)
-  StoredFile requiredByObjectKey(String key) {
-    return repository
-        .findByObjectKeyAndTenantId(key, currentUser.tenantId())
-        .orElseThrow(() -> new NotFoundException("File"));
   }
 
   void receiveLocalUpload(
@@ -227,35 +258,25 @@ public class FileService {
     }
     local.verifyPresigned(objectKey, "PUT", expires, signature);
     StoredFile file =
-        repository.findByObjectKey(objectKey).orElseThrow(() -> new NotFoundException("File"));
+        repository
+            .findByObjectKeyOrPreviewObjectKey(objectKey, objectKey)
+            .orElseThrow(() -> new NotFoundException("File"));
     if (file.getStatus() != StoredFile.Status.PENDING) {
       throw new BusinessException(
           "FILE_NOT_PENDING", "Only pending files can be uploaded", HttpStatus.CONFLICT);
     }
-    if (contentLength != file.getSize()
-        || !sameContentType(file.getContentType(), contentType)
+    boolean preview = objectKey.equals(file.getPreviewObjectKey());
+    long expectedSize = preview ? file.getPreviewSize() : file.getSize();
+    String expectedContentType = preview ? file.getPreviewContentType() : file.getContentType();
+    String expectedChecksum = preview ? file.getPreviewChecksum() : file.getChecksum();
+    if (contentLength != expectedSize
+        || !sameContentType(expectedContentType, contentType)
         || checksum == null
-        || !file.getChecksum().equalsIgnoreCase(checksum)) {
+        || !expectedChecksum.equalsIgnoreCase(checksum)) {
       throw new BusinessException(
           "UPLOAD_CONSTRAINT_MISMATCH", "Upload headers do not match the presigned request");
     }
-    storage.put(objectKey, input, contentLength, file.getContentType(), Map.of("sha256", checksum));
-  }
-
-  StoredFile localDownloadFile(String objectKey, long expires, String signature) {
-    if (!(storage instanceof LocalStorageService local)) {
-      throw new BusinessException(
-          "LOCAL_STORAGE_DISABLED", "Local download endpoint is disabled", HttpStatus.NOT_FOUND);
-    }
-    local.verifyPresigned(objectKey, "GET", expires, signature);
-    StoredFile file =
-        repository.findByObjectKey(objectKey).orElseThrow(() -> new NotFoundException("File"));
-    if (file.getStatus() != StoredFile.Status.CONFIRMED) throw new NotFoundException("File");
-    return file;
-  }
-
-  InputStream openLocalDownload(StoredFile file) throws IOException {
-    return storage.get(file.getObjectKey());
+    storage.put(objectKey, input, contentLength, expectedContentType, Map.of("sha256", checksum));
   }
 
   private StoredFile required(UUID id) {
@@ -271,6 +292,50 @@ public class FileService {
     }
     if (size <= 0 || size > MAX_IMAGE_SIZE) {
       throw new BusinessException("IMAGE_TOO_LARGE", "Image must be no larger than 10 MB");
+    }
+  }
+
+  private static void validatePreviewRequest(long size) {
+    if (size <= 0 || size > MAX_PREVIEW_SIZE) {
+      throw new BusinessException(
+          "IMAGE_PREVIEW_TOO_LARGE", "Image preview must be no larger than 512 KB");
+    }
+  }
+
+  private void validateStoredObject(
+      String objectKey, String contentType, Long size, String checksum, String codePrefix) {
+    if (objectKey == null || contentType == null || size == null || checksum == null) {
+      throw new BusinessException(
+          codePrefix + "_METADATA_MISSING", "Uploaded file metadata is incomplete");
+    }
+    StorageService.ObjectMetadata actual = storage.head(objectKey);
+    if (actual.size() != size) {
+      throw new BusinessException(
+          codePrefix + "_SIZE_MISMATCH", "Uploaded file size does not match the presigned request");
+    }
+    if (!sameContentType(actual.contentType(), contentType)) {
+      throw new BusinessException(
+          codePrefix + "_CONTENT_TYPE_MISMATCH",
+          "Uploaded file type does not match the presigned request");
+    }
+    if (!actualChecksum(objectKey).equalsIgnoreCase(checksum)) {
+      throw new BusinessException(
+          codePrefix + "_CHECKSUM_MISMATCH", "Uploaded file checksum could not be verified");
+    }
+  }
+
+  private void validatePreviewDimensions(String previewObjectKey) {
+    try (InputStream input = storage.get(previewObjectKey)) {
+      WebpDimensions.Size dimensions = WebpDimensions.read(input);
+      if (dimensions.width() > LegacyImagePreviewer.MAX_PREVIEW_DIMENSION
+          || dimensions.height() > LegacyImagePreviewer.MAX_PREVIEW_DIMENSION) {
+        throw new BusinessException(
+            "IMAGE_PREVIEW_DIMENSIONS_TOO_LARGE",
+            "Image preview must fit within 480 by 480 pixels");
+      }
+    } catch (IOException exception) {
+      throw new BusinessException(
+          "STORAGE_READ_FAILED", "Unable to verify image preview", HttpStatus.BAD_GATEWAY);
     }
   }
 
@@ -307,13 +372,20 @@ public class FileService {
     return leaf.isBlank() ? "image" : leaf.substring(0, Math.min(leaf.length(), 500));
   }
 
-  private void deleteObjectAfterCommit(String objectKey) {
+  private void deleteObjectsAfterCommit(String... objectKeys) {
+    Set<String> keys = new LinkedHashSet<>();
+    for (String key : objectKeys) {
+      if (key != null && !key.isBlank()) keys.add(key);
+    }
+    if (keys.isEmpty()) return;
     Runnable deletion =
         () -> {
-          try {
-            storage.delete(objectKey);
-          } catch (RuntimeException ignored) {
-            /* orphan cleanup can retry */
+          for (String key : keys) {
+            try {
+              storage.delete(key);
+            } catch (RuntimeException ignored) {
+              /* orphan cleanup can retry */
+            }
           }
         };
     if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -340,4 +412,29 @@ public class FileService {
     throw new BusinessException(
         "IMAGE_EXTENSION_MISMATCH", "Image extension does not match its content type");
   }
+
+  private static String keySegment(String value) {
+    StringBuilder encoded = new StringBuilder();
+    for (byte current : value.getBytes(StandardCharsets.UTF_8)) {
+      int unsigned = current & 0xff;
+      if ((unsigned >= 'A' && unsigned <= 'Z')
+          || (unsigned >= 'a' && unsigned <= 'z')
+          || (unsigned >= '0' && unsigned <= '9')
+          || unsigned == '-'
+          || unsigned == '_'
+          || unsigned == '.'
+          || unsigned == '~') {
+        encoded.append((char) unsigned);
+      } else {
+        encoded.append('%');
+        encoded.append("0123456789ABCDEF".charAt(unsigned >>> 4));
+        encoded.append("0123456789ABCDEF".charAt(unsigned & 0x0f));
+      }
+    }
+    return encoded.toString();
+  }
+
+  public record PreviewContent(String contentType, Long size, InputStream input) {}
+
+  private record StorageIdentity(String tenantSlug, String productSku) {}
 }

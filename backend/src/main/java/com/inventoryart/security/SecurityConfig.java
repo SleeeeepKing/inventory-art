@@ -59,7 +59,7 @@ public class SecurityConfig {
                 headers.contentSecurityPolicy(
                     csp ->
                         csp.policyDirectives(
-                            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'")))
+                            "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'")))
         .authorizeHttpRequests(
             auth ->
                 auth.requestMatchers(
@@ -70,8 +70,6 @@ public class SecurityConfig {
                         "/v3/api-docs/**",
                         "/swagger-ui/**",
                         "/swagger-ui.html")
-                    .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/v1/files/local")
                     .permitAll()
                     .requestMatchers(HttpMethod.PUT, "/api/v1/files/local")
                     .permitAll()

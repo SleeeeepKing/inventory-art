@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,9 +40,15 @@ public class FileController {
     return files.confirm(fileId);
   }
 
-  @GetMapping("/{fileId}/download-url")
-  public FileDtos.DownloadUrlResponse downloadUrl(@PathVariable UUID fileId) {
-    return files.downloadUrl(fileId);
+  @GetMapping("/{fileId}/preview")
+  public ResponseEntity<InputStreamResource> preview(@PathVariable UUID fileId) throws IOException {
+    FileService.PreviewContent preview = files.preview(fileId);
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore().cachePrivate())
+        .header(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION)
+        .contentType(MediaType.parseMediaType(preview.contentType()))
+        .contentLength(preview.size())
+        .body(new InputStreamResource(preview.input()));
   }
 
   @DeleteMapping("/{fileId}")
@@ -68,16 +75,5 @@ public class FileController {
         contentType,
         checksum);
     return ResponseEntity.noContent().build();
-  }
-
-  @GetMapping("/local")
-  public ResponseEntity<InputStreamResource> localDownload(
-      @RequestParam String objectKey, @RequestParam long expires, @RequestParam String signature)
-      throws IOException {
-    StoredFile file = files.localDownloadFile(objectKey, expires, signature);
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(file.getContentType()))
-        .contentLength(file.getSize())
-        .body(new InputStreamResource(files.openLocalDownload(file)));
   }
 }

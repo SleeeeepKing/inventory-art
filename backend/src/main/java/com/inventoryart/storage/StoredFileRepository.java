@@ -9,5 +9,5 @@ interface StoredFileRepository extends JpaRepository<StoredFile, UUID> {
 
   Optional<StoredFile> findByObjectKeyAndTenantId(String objectKey, UUID tenantId);
 
-  Optional<StoredFile> findByObjectKey(String objectKey);
+  Optional<StoredFile> findByObjectKeyOrPreviewObjectKey(String objectKey, String previewObjectKey);
 }

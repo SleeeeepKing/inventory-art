@@ -57,7 +57,6 @@ export interface Product {
   currentStock: number
   lowStockThreshold?: number
   enabled: boolean
-  imageObjectKey?: string
   imageUrl?: string
   category?: string
   artistName?: string

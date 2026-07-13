@@ -91,7 +91,7 @@ R2 参数应逐项复制生产环境的实际值，尤其要确认 `R2_BUCKET_PR
 | `R2_ENDPOINT`、`R2_PUBLIC_ENDPOINT`                      | S3 兼容 API 与浏览器可访问端点             |
 | `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`               | 对象存储凭据                               |
 | `R2_BUCKET_PRIVATE`                                      | 商品图片私有 Bucket                        |
-| `R2_PRESIGNED_URL_EXPIRATION_SECONDS`                    | 预签名 URL 有效期                          |
+| `R2_PRESIGNED_URL_EXPIRATION_SECONDS`                    | 预签名上传 URL 有效期                      |
 | `VITE_API_BASE_URL`                                      | 前端构建时 API 地址                        |
 
 完整部署说明见 [部署文档](docs/deployment.md)。

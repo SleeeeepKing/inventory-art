@@ -58,6 +58,6 @@ Spring Boot 模块化单体
 - Refresh Token 使用安全 Cookie，并支持轮换和撤销。
 - Flyway 负责数据库结构，Hibernate 只执行 `validate`。
 - `/actuator/health` 用于健康检查，日志包含 `traceId`。
-- 商品图片使用短期预签名 URL，Bucket 保持私有。
+- 商品原图和低清预览使用短期预签名 PUT URL 上传，Bucket 保持私有；页面通过 Tenant 鉴权的后端接口读取低清预览，不接收 R2 GET URL。
 
 更多细节见 [数据库结构](database-schema.md)、[安全与租户隔离](security-and-tenancy.md) 和 [商品图片存储](r2-storage.md)。

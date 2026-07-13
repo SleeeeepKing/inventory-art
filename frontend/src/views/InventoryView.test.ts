@@ -20,6 +20,11 @@ describe('InventoryView product identity', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setAppLocale('en')
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:secure-preview'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     mocks.get.mockImplementation((url: string) => {
       if (url === '/inventory/movements') {
         return Promise.resolve({
@@ -30,7 +35,7 @@ describe('InventoryView product identity', () => {
                 productId: 'product-1',
                 productName: 'Blue Horizon',
                 productSku: 'ART-001',
-                productImageUrl: 'https://images.example.test/blue-horizon.jpg',
+                productImageUrl: '/files/file-1/preview',
                 type: 'INITIAL',
                 quantity: 2,
                 stockBefore: 0,
@@ -50,6 +55,9 @@ describe('InventoryView product identity', () => {
           data: { items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 },
         })
       }
+      if (url === '/files/file-1/preview') {
+        return Promise.resolve({ data: new Blob(['preview'], { type: 'image/webp' }) })
+      }
       return Promise.resolve({ data: [] })
     })
   })
@@ -64,9 +72,7 @@ describe('InventoryView product identity', () => {
     await flushPromises()
 
     const product = wrapper.get('.inventory-product-cell')
-    expect(product.get('img').attributes('src')).toBe(
-      'https://images.example.test/blue-horizon.jpg',
-    )
+    expect(product.get('img').attributes('src')).toBe('blob:secure-preview')
     expect(product.text()).toContain('Blue Horizon')
     expect(product.text()).toContain('ART-001')
   })

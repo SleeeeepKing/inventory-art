@@ -1,5 +1,6 @@
 package com.inventoryart.storage;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -16,6 +17,8 @@ public final class FileDtos {
       @NotBlank String contentType,
       @Positive long size,
       @NotBlank @Pattern(regexp = "(?i)^[a-f0-9]{64}$") String checksumSha256,
+      @Positive @Max(524288) long previewSize,
+      @NotBlank @Pattern(regexp = "(?i)^[a-f0-9]{64}$") String previewChecksumSha256,
       @NotNull UUID productId) {}
 
   public record PresignUploadResponse(
@@ -23,9 +26,9 @@ public final class FileDtos {
       String objectKey,
       String uploadUrl,
       Map<String, String> headers,
+      String previewUploadUrl,
+      Map<String, String> previewHeaders,
       Instant expiresAt) {}
 
   public record ConfirmFileResponse(UUID fileId, String status, Instant confirmedAt) {}
-
-  public record DownloadUrlResponse(String url, Instant expiresAt) {}
 }

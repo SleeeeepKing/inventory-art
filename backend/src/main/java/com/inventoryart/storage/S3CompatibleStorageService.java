@@ -22,8 +22,6 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -72,17 +70,6 @@ public final class S3CompatibleStorageService implements StorageService, AutoClo
             });
     return new PresignedRequest(
         signed.url().toString(), Map.copyOf(headers), Instant.now().plus(validity));
-  }
-
-  @Override
-  public PresignedRequest presignGet(String objectKey, Duration validity) {
-    PresignedGetObjectRequest signed =
-        presigner.presignGetObject(
-            GetObjectPresignRequest.builder()
-                .signatureDuration(validity)
-                .getObjectRequest(GetObjectRequest.builder().bucket(bucket).key(objectKey).build())
-                .build());
-    return new PresignedRequest(signed.url().toString(), Map.of(), Instant.now().plus(validity));
   }
 
   @Override

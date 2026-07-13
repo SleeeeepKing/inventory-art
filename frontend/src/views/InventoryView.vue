@@ -10,6 +10,7 @@ import { useFormatters } from '@/composables/useFormatters'
 import type { InventoryMovement, PageResponse, Product, SalesEvent } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import SecureImage from '@/components/SecureImage.vue'
 
 interface SaleLine {
   productId: string
@@ -326,11 +327,9 @@ onMounted(load)
           ><template #default="scope"
             ><div class="inventory-product-cell">
               <div class="product-thumb" aria-hidden="true">
-                <img
-                  v-if="movementProductImage(scope.row)"
-                  :src="movementProductImage(scope.row)"
-                  alt=""
-                /><span v-else>{{ movementProductInitial(scope.row) }}</span>
+                <SecureImage :src="movementProductImage(scope.row)" alt=""
+                  ><span>{{ movementProductInitial(scope.row) }}</span></SecureImage
+                >
               </div>
               <div class="cell-stack">
                 <strong>{{ movementProductName(scope.row) }}</strong

@@ -52,12 +52,6 @@ public final class LocalStorageService implements StorageService {
     return new PresignedRequest(localUrl(objectKey, "PUT", expires), Map.copyOf(headers), expires);
   }
 
-  @Override
-  public PresignedRequest presignGet(String objectKey, Duration validity) {
-    Instant expires = Instant.now().plus(validity);
-    return new PresignedRequest(localUrl(objectKey, "GET", expires), Map.of(), expires);
-  }
-
   private String localUrl(String objectKey, String operation, Instant expires) {
     long epoch = expires.getEpochSecond();
     return "/api/v1/files/local?objectKey="
@@ -147,12 +141,8 @@ public final class LocalStorageService implements StorageService {
           "FILE_NOT_FOUND", "Stored object not found", HttpStatus.NOT_FOUND);
     }
     try {
-      String contentType = Files.probeContentType(path);
-      return new ObjectMetadata(
-          Files.size(path),
-          contentType == null ? "application/octet-stream" : contentType,
-          sha256(path),
-          Map.of());
+      String contentType = imageContentType(path);
+      return new ObjectMetadata(Files.size(path), contentType, sha256(path), Map.of());
     } catch (IOException exception) {
       throw new BusinessException(
           "STORAGE_READ_FAILED", "Unable to inspect stored object", HttpStatus.BAD_GATEWAY);
@@ -190,5 +180,14 @@ public final class LocalStorageService implements StorageService {
     } catch (NoSuchAlgorithmException impossible) {
       throw new IllegalStateException(impossible);
     }
+  }
+
+  private static String imageContentType(Path path) throws IOException {
+    String filename = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+    if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+    if (filename.endsWith(".png")) return "image/png";
+    if (filename.endsWith(".webp")) return "image/webp";
+    String detected = Files.probeContentType(path);
+    return detected == null ? "application/octet-stream" : detected;
   }
 }

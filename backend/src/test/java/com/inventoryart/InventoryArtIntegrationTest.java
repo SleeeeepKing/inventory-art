@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventoryart.audit.AuditLogRepository;
 import com.inventoryart.event.SalesEvent;
@@ -24,7 +25,12 @@ import com.inventoryart.user.User;
 import com.inventoryart.user.UserRepository;
 import com.inventoryart.user.UserRole;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -107,8 +113,88 @@ class InventoryArtIntegrationTest {
         .containsExactlyInAnyOrder(
             "id", "tenant_id", "event_id", "attributed_date", "operator_id", "created_at");
     assertThat(columns("stored_files"))
-        .contains("product_id")
+        .contains(
+            "product_id",
+            "preview_object_key",
+            "preview_content_type",
+            "preview_size",
+            "preview_checksum")
         .doesNotContain("purpose", "resource_type", "resource_id");
+  }
+
+  @Test
+  void productImagesUseSlugAndSkuPathsAndExposeOnlyTenantScopedPreviews() throws Exception {
+    Fixture owner = fixture("image-owner");
+    Fixture other = fixture("image-other");
+    Product product = productWithSku(owner, "ART / 001");
+    byte[] original = "private-original-image".getBytes(StandardCharsets.UTF_8);
+    byte[] preview = webpPreview(480, 320);
+
+    String response =
+        mvc.perform(
+                post("/api/v1/files/presign")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "originalFilename",
+                                "art.png",
+                                "contentType",
+                                "image/png",
+                                "size",
+                                original.length,
+                                "checksumSha256",
+                                sha256(original),
+                                "previewSize",
+                                preview.length,
+                                "previewChecksumSha256",
+                                sha256(preview),
+                                "productId",
+                                product.getId()))))
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.objectKey")
+                    .value(
+                        org.hamcrest.Matchers.matchesPattern(
+                            "tenants/"
+                                + owner.tenant().getSlug()
+                                + "/products/ART%20%2F%20001/[0-9a-f-]+/original\\.png")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    JsonNode presigned = json.readTree(response);
+    uploadLocal(presigned, "uploadUrl", "headers", original);
+    uploadLocal(presigned, "previewUploadUrl", "previewHeaders", preview);
+
+    UUID fileId = UUID.fromString(presigned.get("fileId").asText());
+    mvc.perform(post("/api/v1/files/{fileId}/confirm", fileId).with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CONFIRMED"));
+
+    mvc.perform(get("/api/v1/products/{id}", product.getId()).with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.imageUrl").value("/files/" + fileId + "/preview"))
+        .andExpect(jsonPath("$.imageObjectKey").doesNotExist());
+
+    byte[] downloadedPreview =
+        mvc.perform(get("/api/v1/files/{fileId}/preview", fileId).with(userJwt(owner)))
+            .andExpect(status().isOk())
+            .andExpect(
+                result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/webp"))
+            .andExpect(
+                result ->
+                    assertThat(result.getResponse().getHeader("Cache-Control"))
+                        .contains("no-store", "private"))
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+    assertThat(downloadedPreview).isEqualTo(preview);
+
+    mvc.perform(get("/api/v1/files/{fileId}/preview", fileId).with(userJwt(other)))
+        .andExpect(status().isNotFound());
+    mvc.perform(get("/api/v1/files/{fileId}/download-url", fileId).with(userJwt(owner)))
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -590,6 +676,63 @@ class InventoryArtIntegrationTest {
         null,
         fixture.user().getId());
     return product;
+  }
+
+  private Product productWithSku(Fixture fixture, String sku) {
+    return products.save(
+        new Product(
+            UUID.randomUUID(),
+            fixture.tenant().getId(),
+            sku,
+            "Product",
+            "Test",
+            null,
+            null,
+            new BigDecimal("2.00"),
+            new BigDecimal("10.00"),
+            "EUR",
+            2));
+  }
+
+  private void uploadLocal(JsonNode presigned, String urlField, String headersField, byte[] content)
+      throws Exception {
+    var request = put(URI.create(presigned.get(urlField).asText())).content(content);
+    presigned
+        .get(headersField)
+        .fields()
+        .forEachRemaining(header -> request.header(header.getKey(), header.getValue().asText()));
+    mvc.perform(request).andExpect(status().isNoContent());
+  }
+
+  private byte[] webpPreview(int width, int height) {
+    byte[] bytes = new byte[30];
+    ascii(bytes, 0, "RIFF");
+    littleEndian(bytes, 4, 22, 4);
+    ascii(bytes, 8, "WEBP");
+    ascii(bytes, 12, "VP8X");
+    littleEndian(bytes, 16, 10, 4);
+    littleEndian(bytes, 24, width - 1, 3);
+    littleEndian(bytes, 27, height - 1, 3);
+    return bytes;
+  }
+
+  private void ascii(byte[] target, int offset, String value) {
+    byte[] source = value.getBytes(StandardCharsets.US_ASCII);
+    System.arraycopy(source, 0, target, offset, source.length);
+  }
+
+  private void littleEndian(byte[] target, int offset, int value, int length) {
+    for (int index = 0; index < length; index++) {
+      target[offset + index] = (byte) (value >>> (index * 8));
+    }
+  }
+
+  private String sha256(byte[] value) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+    } catch (NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException(impossible);
+    }
   }
 
   private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors

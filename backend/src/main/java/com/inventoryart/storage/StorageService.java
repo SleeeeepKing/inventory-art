@@ -23,8 +23,6 @@ public interface StorageService extends AutoCloseable {
       String checksumSha256,
       Duration validity);
 
-  PresignedRequest presignGet(String objectKey, Duration validity);
-
   void put(
       String objectKey,
       InputStream content,

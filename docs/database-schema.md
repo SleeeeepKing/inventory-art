@@ -38,7 +38,7 @@ erDiagram
 
 `inventory_movements` 保存商品、流水类型、数量变化、变更后库存、归属日期、销量批次、备注、操作人和时间戳。它不保存成交单价，也不关联金额记录。
 
-`stored_files` 专用于商品图片，保存商品外键、对象 key、文件名、MIME、大小、checksum 和时间戳。
+`stored_files` 专用于商品图片，保存商品外键、原图与低清预览各自的对象 key、MIME、大小、checksum，以及文件名和时间戳。
 
 ## V8 清理
 

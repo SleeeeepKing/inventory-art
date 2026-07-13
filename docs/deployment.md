@@ -52,7 +52,7 @@ docker compose up --build
 
 前端使用 `vite-plugin-pwa` 和 Workbox 自定义 Service Worker。Service Worker 只预缓存应用外壳、哈希 JS/CSS、字体、Manifest 和应用图标：
 
-- 任意跨域请求始终使用 NetworkOnly，包括 Railway API 和 R2 预签名 URL。
+- 任意跨域请求始终使用 NetworkOnly，包括 Railway API 和 R2 预签名上传 URL。
 - 同源 `/api/**` 和 `/actuator/**` 始终使用 NetworkOnly。
 - 不缓存登录、刷新令牌、用户、Tenant、商品、库存、订单、报表或认证后的 API 响应。
 - 不启用 Background Sync、推送或写请求队列。

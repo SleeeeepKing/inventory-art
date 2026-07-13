@@ -26,16 +26,28 @@ public class StoredFile {
   @Column(name = "object_key", nullable = false, unique = true)
   private String objectKey;
 
+  @Column(name = "preview_object_key", unique = true)
+  private String previewObjectKey;
+
   @Column(name = "original_filename")
   private String originalFilename;
 
   @Column(name = "content_type", nullable = false)
   private String contentType;
 
+  @Column(name = "preview_content_type")
+  private String previewContentType;
+
   private Long size;
+
+  @Column(name = "preview_size")
+  private Long previewSize;
 
   @Column(length = 64)
   private String checksum;
+
+  @Column(name = "preview_checksum", length = 64)
+  private String previewChecksum;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
@@ -61,20 +73,28 @@ public class StoredFile {
   static StoredFile pending(
       UUID tenantId,
       String objectKey,
+      String previewObjectKey,
       String originalFilename,
       String contentType,
       long size,
       String checksum,
+      String previewContentType,
+      long previewSize,
+      String previewChecksum,
       UUID productId,
       UUID createdBy) {
     StoredFile file = new StoredFile();
     file.id = UUID.randomUUID();
     file.tenantId = tenantId;
     file.objectKey = objectKey;
+    file.previewObjectKey = previewObjectKey;
     file.originalFilename = originalFilename;
     file.contentType = contentType;
     file.size = size;
     file.checksum = checksum;
+    file.previewContentType = previewContentType;
+    file.previewSize = previewSize;
+    file.previewChecksum = previewChecksum;
     file.status = Status.PENDING;
     file.productId = productId;
     file.createdBy = createdBy;
@@ -104,6 +124,10 @@ public class StoredFile {
     return objectKey;
   }
 
+  public String getPreviewObjectKey() {
+    return previewObjectKey;
+  }
+
   public String getOriginalFilename() {
     return originalFilename;
   }
@@ -112,12 +136,24 @@ public class StoredFile {
     return contentType;
   }
 
+  public String getPreviewContentType() {
+    return previewContentType;
+  }
+
   public Long getSize() {
     return size;
   }
 
+  public Long getPreviewSize() {
+    return previewSize;
+  }
+
   public String getChecksum() {
     return checksum;
+  }
+
+  public String getPreviewChecksum() {
+    return previewChecksum;
   }
 
   public Status getStatus() {

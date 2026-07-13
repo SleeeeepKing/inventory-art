@@ -4,13 +4,14 @@
 
 ## 数据与对象
 
-`stored_files` 直接关联商品，保存对象 key、原文件名、MIME、大小、checksum 和时间戳。对象 key 由服务端生成，推荐结构：
+`stored_files` 直接关联商品，分别保存原图和低清预览的对象 key、MIME、大小、checksum 和时间戳。对象 key 由服务端根据当前数据库中的 Tenant slug 与商品 SKU 生成：
 
 ```text
-tenants/{tenantId}/products/{productId}/{uuid}.{ext}
+tenants/{tenantSlug}/products/{encodedSku}/{uuid}/original.{ext}
+tenants/{tenantSlug}/products/{encodedSku}/{uuid}/preview.webp
 ```
 
-Bucket 不开放匿名列举或公开读取。浏览器通过后端授权后取得短期预签名 URL。
+SKU 作为单一路径段进行百分号编码，不能借助 `/` 等字符改变对象层级。Bucket 不开放匿名列举或公开读取。浏览器只在上传时取得短期预签名 PUT URL；日常展示通过带 JWT 的后端预览接口读取，不向浏览器返回 R2 GET URL。
 
 ## 配置
 
@@ -19,7 +20,7 @@ Bucket 不开放匿名列举或公开读取。浏览器通过后端授权后取�
 | `STORAGE_PROVIDER`                    | `local`、`r2` 或 `minio`                     |
 | `LOCAL_STORAGE_PATH`                  | 本地存储目录                                 |
 | `R2_ENDPOINT`                         | S3 API 地址                                  |
-| `R2_PUBLIC_ENDPOINT`                  | 浏览器能够访问的签名 URL 端点                |
+| `R2_PUBLIC_ENDPOINT`                  | 浏览器能够访问的签名上传 URL 端点            |
 | `R2_REGION`                           | 区域；R2 常用 `auto`，MinIO 可用 `us-east-1` |
 | `R2_ACCESS_KEY_ID`                    | 访问密钥 ID                                  |
 | `R2_SECRET_ACCESS_KEY`                | 访问密钥 Secret                              |
@@ -32,11 +33,12 @@ Bucket 不开放匿名列举或公开读取。浏览器通过后端授权后取�
 
 1. 用户选择当前 Tenant 下的商品。
 2. 后端验证商品归属、扩展名、MIME 和大小。
-3. 后端生成不可预测对象 key 并保存对象。
-4. 成功后写入 `stored_files`；失败时清理已创建对象。
-5. 读取或删除前重新验证文件、商品和 Tenant 的关联。
+3. 浏览器在本地生成最长边 480 px、最大 512 KiB 的 WebP 预览，原图与预览分别直传私有 Bucket。
+4. 后端确认两份对象的 MIME、大小、checksum，并校验预览画布不超过 480 × 480。
+5. 成功后关联商品；读取或删除前重新验证文件、商品和 Tenant 的关联。
+6. 商品 API 只返回 `/files/{fileId}/preview`，前端携带 Bearer Token 获取预览 Blob；响应使用 `private, no-store`，不会进入 PWA 缓存。
 
-删除或替换图片时应同时清理对象和数据库元数据。对象操作失败必须记录可追踪日志，避免静默产生孤儿数据。
+删除或替换图片时同时清理原图、预览和数据库元数据。旧版 JPEG/PNG 对象没有预览时，由后端按 480 px 上限即时转换；旧版 WebP 不回退到原图，以免重新暴露源文件。
 
 ## CORS 与权限
 
@@ -44,7 +46,8 @@ Bucket 不开放匿名列举或公开读取。浏览器通过后端授权后取�
 
 ## 运维检查
 
-- 验证上传、预签名读取、替换和删除。
-- 验证 Tenant A 无法签名或删除 Tenant B 商品图片。
+- 验证双对象上传、鉴权预览、替换和删除。
+- 验证商品响应和浏览器网络请求中没有 R2 GET URL。
+- 验证 Tenant A 无法签名、预览或删除 Tenant B 商品图片。
 - 定期比对 `stored_files` 与 Bucket 对象，清理确认无引用的孤儿对象。
 - 备份数据库和 Bucket，并演练一起恢复，避免元数据与对象版本错位。
