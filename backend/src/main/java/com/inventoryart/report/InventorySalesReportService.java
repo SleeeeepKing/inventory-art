@@ -3,6 +3,7 @@ package com.inventoryart.report;
 import com.inventoryart.exception.BusinessException;
 import com.inventoryart.exception.NotFoundException;
 import com.inventoryart.security.CurrentUserService;
+import com.inventoryart.storage.FileService;
 import java.sql.Date;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -30,11 +31,13 @@ public class InventorySalesReportService {
 
   private final NamedParameterJdbcTemplate jdbc;
   private final CurrentUserService currentUser;
+  private final FileService files;
 
   public InventorySalesReportService(
-      NamedParameterJdbcTemplate jdbc, CurrentUserService currentUser) {
+      NamedParameterJdbcTemplate jdbc, CurrentUserService currentUser, FileService files) {
     this.jdbc = jdbc;
     this.currentUser = currentUser;
+    this.files = files;
   }
 
   @Transactional(readOnly = true)
@@ -69,30 +72,44 @@ public class InventorySalesReportService {
         end,
         settings.zone().getId(),
         summary == null ? new ReportDtos.InventorySalesMetrics(0, 0) : summary,
-        groups("p.id", "p.sku", "p.name", "p.id,p.sku,p.name", params),
-        groups("null::uuid", "null::varchar", "e.name", "e.name", params));
+        groups(
+            "p.id",
+            "p.sku",
+            "p.name",
+            "p.image_object_key",
+            "p.id,p.sku,p.name,p.image_object_key",
+            params),
+        groups("null::uuid", "null::varchar", "e.name", "null::varchar", "e.name", params));
   }
 
   private List<ReportDtos.InventorySalesGroup> groups(
-      String productId, String sku, String label, String groupBy, MapSqlParameterSource params) {
+      String productId,
+      String sku,
+      String label,
+      String imageObjectKey,
+      String groupBy,
+      MapSqlParameterSource params) {
     return jdbc.query(
         """
-            select %s product_id,%s sku,%s label,
+            select %s product_id,%s sku,%s label,%s image_object_key,
                    sum(l.quantity) units,count(distinct b.id) batches
             """
-                .formatted(productId, sku, label)
+                .formatted(productId, sku, label, imageObjectKey)
             + BASE
             + " group by "
             + groupBy
             + " order by units desc,label limit 100",
         params,
-        (rs, row) ->
-            new ReportDtos.InventorySalesGroup(
-                rs.getObject("product_id", UUID.class),
-                rs.getString("sku"),
-                rs.getString("label"),
-                rs.getLong("units"),
-                rs.getLong("batches")));
+        (rs, row) -> {
+          UUID id = rs.getObject("product_id", UUID.class);
+          return new ReportDtos.InventorySalesGroup(
+              id,
+              rs.getString("sku"),
+              rs.getString("label"),
+              id == null ? null : files.productImageUrl(id, rs.getString("image_object_key")),
+              rs.getLong("units"),
+              rs.getLong("batches"));
+        });
   }
 
   private Settings settings(UUID tenantId) {

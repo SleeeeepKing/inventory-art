@@ -50,7 +50,7 @@ public final class ReportDtos {
   public record InventorySalesMetrics(long units, long batches) {}
 
   public record InventorySalesGroup(
-      UUID productId, String sku, String label, long units, long batches) {}
+      UUID productId, String sku, String label, String productImageUrl, long units, long batches) {}
 
   public record InventorySalesReport(
       LocalDate startDate,

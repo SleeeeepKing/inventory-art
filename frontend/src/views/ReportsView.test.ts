@@ -115,5 +115,58 @@ describe('ReportsView filters', () => {
     expect(wrapper.text()).toContain('Paris Expo')
     expect(wrapper.text()).toContain('Transport')
     expect(wrapper.text()).toContain('€70.00')
+    const chart = wrapper.get('.report-chart')
+    const events = wrapper.get('.event-report-panel')
+    expect(chart.element.compareDocumentPosition(events.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(wrapper.find('.report-grid .event-report-panel').exists()).toBe(false)
+  })
+
+  it('loads top-product images through the authenticated preview endpoint', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:secure-report-preview')
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+    mocks.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1/preview') return Promise.resolve({ data: new Blob(['preview']) })
+      if (url.endsWith('inventory-sales')) {
+        return Promise.resolve({
+          data: {
+            ...inventory,
+            summary: { units: 3, batches: 1 },
+            byProduct: [
+              {
+                productId: 'product-1',
+                sku: 'ART-001',
+                label: 'Blue Print',
+                productImageUrl: '/files/file-1/preview',
+                units: 3,
+                batches: 1,
+              },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({ data: dashboard })
+    })
+
+    const wrapper = mount(ReportsView, {
+      global: {
+        plugins: [createPinia(), i18n, ElementPlus],
+        stubs: { ChartCanvas: true },
+      },
+    })
+    await flushPromises()
+
+    const product = wrapper.get('.inventory-product-cell')
+    expect(product.text()).toContain('Blue Print')
+    expect(product.text()).toContain('ART-001')
+    expect(product.get('img').attributes('src')).toBe('blob:secure-report-preview')
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/files/file-1/preview',
+      expect.objectContaining({ responseType: 'blob', signal: expect.any(AbortSignal) }),
+    )
+    expect(createObjectUrl).toHaveBeenCalledOnce()
   })
 })

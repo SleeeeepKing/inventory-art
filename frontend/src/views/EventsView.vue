@@ -53,9 +53,10 @@ const filteredEvents = computed(() =>
     .sort((left, right) => right.startDate.localeCompare(left.startDate)),
 )
 const enabledCount = computed(() => events.value.filter((event) => event.enabled).length)
-const upcomingCount = computed(
-  () => events.value.filter((event) => event.enabled && event.endDate >= today).length,
+const ongoingCount = computed(
+  () => events.value.filter((event) => event.startDate <= today && event.endDate >= today).length,
 )
+const finishedCount = computed(() => events.value.filter((event) => event.endDate < today).length)
 const expenseCurrency = computed(
   () => auth.user?.tenant?.defaultCurrency || expenses.value[0]?.currency || '—',
 )
@@ -317,8 +318,12 @@ onMounted(load)
         ><strong>{{ enabledCount }}</strong>
       </div>
       <div>
-        <i /><span>{{ t('events.upcomingCount') }}</span
-        ><strong>{{ upcomingCount }}</strong>
+        <i /><span>{{ t('events.ongoingCount') }}</span
+        ><strong>{{ ongoingCount }}</strong>
+      </div>
+      <div>
+        <i /><span>{{ t('events.finishedCount') }}</span
+        ><strong>{{ finishedCount }}</strong>
       </div>
     </section>
 

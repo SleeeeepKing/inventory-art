@@ -131,4 +131,53 @@ describe('EventsView expenses', () => {
     expect(document.body.textContent).toContain('Accommodation')
     expect(document.body.textContent).toContain('Disabled')
   })
+
+  it('summarizes total, enabled, ongoing, and finished exhibitions separately', async () => {
+    const date = (offset: number) => {
+      const value = new Date()
+      value.setUTCDate(value.getUTCDate() + offset)
+      return value.toISOString().slice(0, 10)
+    }
+    mocks.get.mockImplementation((url: string) => {
+      if (url === '/sales-events') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'past',
+              name: 'Past Expo',
+              startDate: date(-3),
+              endDate: date(-1),
+              enabled: false,
+            },
+            {
+              id: 'ongoing',
+              name: 'Current Expo',
+              startDate: date(-1),
+              endDate: date(1),
+              enabled: true,
+            },
+            {
+              id: 'future',
+              name: 'Future Expo',
+              startDate: date(2),
+              endDate: date(3),
+              enabled: true,
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const wrapper = mount(EventsView, {
+      global: {
+        plugins: [createPinia(), i18n, ElementPlus],
+        stubs: { PageHeader: true, EmptyState: true },
+      },
+    })
+    await flushPromises()
+
+    const summary = wrapper.findAll('.event-summary > div').map((item) => item.text())
+    expect(summary).toEqual(['Total exhibitions3', 'Enabled2', 'In progress1', 'Finished1'])
+  })
 })

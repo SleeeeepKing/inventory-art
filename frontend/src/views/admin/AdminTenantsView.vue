@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Edit, Plus, RefreshRight } from '@element-plus/icons-vue'
 import { api, apiFieldErrors } from '@/services/api'
 import { normalizePage } from '@/services/paging'
+import { businessCurrencies } from '@/services/currencies'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
 import type { AdminTenant, PageResponse } from '@/types/api'
@@ -211,9 +212,11 @@ onMounted(load)
           ></ElFormItem
         ><ElFormItem :label="t('admin.currency')"
           ><ElSelect v-model="form.defaultCurrency"
-            ><ElOption label="EUR" value="EUR" /><ElOption label="USD" value="USD" /><ElOption
-              label="GBP"
-              value="GBP" /></ElSelect></ElFormItem
+            ><ElOption
+              v-for="currency in businessCurrencies"
+              :key="currency"
+              :label="currency"
+              :value="currency" /></ElSelect></ElFormItem
         ><ElFormItem :label="t('admin.timezone')" :error="formErrors.timezone"
           ><ElInput v-model="form.timezone" /></ElFormItem
         ><ElFormItem :label="t('admin.businessLocale')"

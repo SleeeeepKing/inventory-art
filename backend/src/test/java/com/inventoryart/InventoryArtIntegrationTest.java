@@ -275,6 +275,44 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
+  void productListCombinesLowStockAndCategoryFiltersWithinTheCurrentTenant() throws Exception {
+    Fixture owner = fixture("product-filter-owner");
+    Fixture other = fixture("product-filter-other");
+    Product lowPrint = product(owner, "LOW-PRINT", "Print", 1);
+    Product healthyPrint = product(owner, "HEALTHY-PRINT", "Print", 5);
+    Product lowSculpture = product(owner, "LOW-SCULPTURE", "Sculpture", 1);
+    product(other, "OTHER-PHOTO", "Photography", 1);
+
+    mvc.perform(
+            get("/api/v1/products")
+                .with(userJwt(owner))
+                .param("lowStock", "true")
+                .param("categories", "print", "Sculpture"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(2))
+        .andExpect(
+            jsonPath("$.items[*].id")
+                .value(
+                    org.hamcrest.Matchers.containsInAnyOrder(
+                        lowPrint.getId().toString(), lowSculpture.getId().toString())));
+
+    mvc.perform(
+            get("/api/v1/products")
+                .with(userJwt(owner))
+                .param("lowStock", "false")
+                .param("categories", "Print"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.items[0].id").value(healthyPrint.getId().toString()));
+
+    mvc.perform(get("/api/v1/products/categories").with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$", org.hamcrest.Matchers.hasItems("Print", "Sculpture")))
+        .andExpect(
+            jsonPath("$", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("Photography"))));
+  }
+
+  @Test
   void productImagesUseSlugAndSkuPathsAndExposeOnlyTenantScopedPreviews() throws Exception {
     Fixture owner = fixture("image-owner");
     Fixture other = fixture("image-other");
@@ -347,6 +385,25 @@ class InventoryArtIntegrationTest {
         .andExpect(status().isNotFound());
     mvc.perform(get("/api/v1/files/{fileId}/download-url", fileId).with(userJwt(owner)))
         .andExpect(status().isNotFound());
+
+    inventory.apply(
+        owner.tenant().getId(),
+        product.getId(),
+        3,
+        MovementType.ADJUSTMENT_IN,
+        "report image test",
+        null,
+        owner.user().getId());
+    SalesEvent event = event(owner, "Image Expo", "2026-07-10", "2026-07-12");
+    createSale(owner, event, List.of(Map.of("productId", product.getId(), "quantity", 1)));
+    mvc.perform(
+            get("/api/v1/reports/inventory-sales")
+                .with(userJwt(owner))
+                .param("start", "2026-07-12")
+                .param("end", "2026-07-12"))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.byProduct[0].productImageUrl").value("/files/" + fileId + "/preview"));
   }
 
   @Test

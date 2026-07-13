@@ -7,6 +7,7 @@ import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { api, resolveApiUrl } from '@/services/api'
 import { createImagePreview, sha256 } from '@/services/imagePreview'
 import { normalizePage } from '@/services/paging'
+import { businessCurrencies } from '@/services/currencies'
 import { useApiFeedback } from '@/composables/useApiFeedback'
 import { useFormatters } from '@/composables/useFormatters'
 import type { PageResponse, Product } from '@/types/api'
@@ -21,6 +22,9 @@ const loading = ref(false)
 const saving = ref(false)
 const dialogOpen = ref(false)
 const search = ref('')
+const lowStockFilter = ref<'ALL' | 'LOW' | 'ENOUGH'>('ALL')
+const selectedCategories = ref<string[]>([])
+const productCategories = ref<string[]>([])
 const currentPage = ref(1)
 const pageSize = ref(20)
 const page = ref<PageResponse<Product>>(normalizePage([]))
@@ -44,14 +48,32 @@ const form = reactive(emptyForm())
 async function load() {
   loading.value = true
   try {
+    const params = new URLSearchParams({
+      page: String(currentPage.value - 1),
+      size: String(pageSize.value),
+    })
+    if (search.value.trim()) params.set('q', search.value.trim())
+    if (lowStockFilter.value !== 'ALL') {
+      params.set('lowStock', String(lowStockFilter.value === 'LOW'))
+    }
+    selectedCategories.value.forEach((category) => params.append('categories', category))
     const { data } = await api.get<PageResponse<Product> | Product[]>('/products', {
-      params: { page: currentPage.value - 1, size: pageSize.value, q: search.value || undefined },
+      params,
     })
     page.value = normalizePage(data, currentPage.value - 1, pageSize.value)
   } catch (error) {
     showError(error)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadCategories() {
+  try {
+    const { data } = await api.get<string[]>('/products/categories')
+    productCategories.value = data
+  } catch (error) {
+    showError(error)
   }
 }
 
@@ -155,7 +177,10 @@ async function remove(product: Product) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadCategories()
+})
 </script>
 
 <template>
@@ -182,6 +207,27 @@ onMounted(load)
           @keyup.enter="reloadFirstPage"
           @clear="reloadFirstPage"
         />
+        <ElSelect
+          v-model="lowStockFilter"
+          :placeholder="t('products.stockStatus')"
+          @change="reloadFirstPage"
+        >
+          <ElOption :label="t('common.all')" value="ALL" />
+          <ElOption :label="t('products.lowStockOnly')" value="LOW" />
+          <ElOption :label="t('products.sufficientStock')" value="ENOUGH" />
+        </ElSelect>
+        <ElSelect
+          v-model="selectedCategories"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          filterable
+          :placeholder="t('products.categoryFilter')"
+          @change="reloadFirstPage"
+        >
+          <ElOption v-for="category in productCategories" :key="category" :value="category" />
+        </ElSelect>
         <ElButton @click="reloadFirstPage">{{ t('common.search') }}</ElButton>
         <span class="table-toolbar__count">{{
           t('common.items', { count: page.totalElements })
@@ -305,9 +351,11 @@ onMounted(load)
         /></ElFormItem>
         <ElFormItem :label="t('products.currency')"
           ><ElSelect v-model="form.currency"
-            ><ElOption label="EUR" value="EUR" /><ElOption label="USD" value="USD" /><ElOption
-              label="GBP"
-              value="GBP" /></ElSelect
+            ><ElOption
+              v-for="currency in businessCurrencies"
+              :key="currency"
+              :label="currency"
+              :value="currency" /></ElSelect
         ></ElFormItem>
         <ElFormItem :label="t('products.threshold')"
           ><ElInputNumber

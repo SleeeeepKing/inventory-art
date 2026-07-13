@@ -13,6 +13,7 @@ import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -51,15 +52,19 @@ public class ProductController {
   public PageResponse<Response> list(
       @RequestParam(required = false) String q,
       @RequestParam(required = false) Boolean enabled,
-      @RequestParam(defaultValue = "false") boolean lowStock,
+      @RequestParam(required = false) Boolean lowStock,
+      @RequestParam(required = false) @Size(max = 100) List<@Size(max = 160) String> categories,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    List<String> categoryFilter = normalizeCategories(categories);
     var productsPage =
         products.search(
             current.tenantId(),
             blankToEmpty(q),
             enabled,
             lowStock,
+            categoryFilter.isEmpty(),
+            categoryFilter.isEmpty() ? List.of("") : categoryFilter,
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt")));
     var summaries = sales.summarize(productsPage.getContent());
     return PageResponse.of(
@@ -183,6 +188,16 @@ public class ProductController {
 
   private String blankToEmpty(String s) {
     return s == null || s.isBlank() ? "" : s.trim();
+  }
+
+  private List<String> normalizeCategories(List<String> categories) {
+    if (categories == null) return List.of();
+    return categories.stream()
+        .map(this::blankToEmpty)
+        .filter(category -> !category.isEmpty())
+        .map(category -> category.toLowerCase(Locale.ROOT))
+        .distinct()
+        .toList();
   }
 
   private Response response(Product p) {

@@ -13,6 +13,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ChartCanvas from '@/components/ChartCanvas.vue'
+import SecureImage from '@/components/SecureImage.vue'
 
 interface DashboardResponse {
   defaultCurrency: string
@@ -172,7 +173,22 @@ onMounted(load)
           <h2>{{ t('dashboard.lowStock') }}</h2>
         </div>
         <ElTable v-if="lowStock.length" :data="lowStock">
-          <ElTableColumn prop="name" :label="t('inventory.product')" min-width="170" />
+          <ElTableColumn :label="t('inventory.product')" min-width="210">
+            <template #default="scope">
+              <div class="inventory-product-cell">
+                <div class="product-thumb" aria-hidden="true">
+                  <SecureImage :src="scope.row.imageUrl" alt=""
+                    ><span>{{
+                      scope.row.name.trim().charAt(0).toUpperCase() || '?'
+                    }}</span></SecureImage
+                  >
+                </div>
+                <div class="cell-stack">
+                  <strong>{{ scope.row.name }}</strong>
+                </div>
+              </div>
+            </template>
+          </ElTableColumn>
           <ElTableColumn prop="sku" label="SKU" />
           <ElTableColumn :label="t('inventory.currentStock')" align="right">
             <template #default="scope">{{ number(scope.row.currentStock) }}</template>

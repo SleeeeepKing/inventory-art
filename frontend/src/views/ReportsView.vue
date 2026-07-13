@@ -17,6 +17,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ChartCanvas from '@/components/ChartCanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import SecureImage from '@/components/SecureImage.vue'
 
 interface CurrencyMetric {
   currency: string
@@ -67,6 +68,7 @@ interface InventoryGroup {
   productId?: string
   sku?: string
   label: string
+  productImageUrl?: string
   units: number
   batches: number
 }
@@ -287,48 +289,46 @@ onMounted(load)
       />
     </section>
 
-    <section class="report-grid">
-      <article class="panel chart-panel">
-        <div class="panel-heading">
-          <h2>
-            {{ appliedGranularity === 'HOUR' ? t('reports.hourlySales') : t('reports.dailySales') }}
-          </h2>
-          <small v-if="dashboard">{{
-            t('reports.timezoneHint', { timezone: dashboard.timezone })
-          }}</small>
-        </div>
-        <ChartCanvas v-if="current" :option="trendOption" />
-        <EmptyState v-else :title="t('reports.noData')" :body="t('reports.noExchange')" />
-      </article>
+    <section class="panel chart-panel report-chart">
+      <div class="panel-heading">
+        <h2>
+          {{ appliedGranularity === 'HOUR' ? t('reports.hourlySales') : t('reports.dailySales') }}
+        </h2>
+        <small v-if="dashboard">{{
+          t('reports.timezoneHint', { timezone: dashboard.timezone })
+        }}</small>
+      </div>
+      <ChartCanvas v-if="current" :option="trendOption" />
+      <EmptyState v-else :title="t('reports.noData')" :body="t('reports.noExchange')" />
+    </section>
 
-      <article class="panel data-panel">
-        <div class="panel-heading">
-          <h2>{{ t('reports.events') }}</h2>
-        </div>
-        <ElTable v-if="eventRows.length" :data="eventRows">
-          <ElTableColumn prop="label" :label="t('orders.event')" min-width="190" />
-          <ElTableColumn :label="t('reports.orders')" align="right">
-            <template #default="scope">{{ number(scope.row.transactions) }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('reports.expenseEntries')" align="right">
-            <template #default="scope">{{ number(scope.row.expenseCount) }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('reports.revenue')" align="right">
-            <template #default="scope">{{
-              money(scope.row.totalSales, scope.row.currency)
-            }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('reports.expenses')" align="right">
-            <template #default="scope">{{
-              money(scope.row.totalExpenses, scope.row.currency)
-            }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('reports.balance')" align="right">
-            <template #default="scope">{{ money(scope.row.balance, scope.row.currency) }}</template>
-          </ElTableColumn>
-        </ElTable>
-        <EmptyState v-else :title="t('reports.noData')" :body="t('reports.noExchange')" />
-      </article>
+    <section class="panel data-panel event-report-panel">
+      <div class="panel-heading">
+        <h2>{{ t('reports.events') }}</h2>
+      </div>
+      <ElTable v-if="eventRows.length" :data="eventRows">
+        <ElTableColumn prop="label" :label="t('orders.event')" min-width="190" />
+        <ElTableColumn :label="t('reports.orders')" align="right">
+          <template #default="scope">{{ number(scope.row.transactions) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('reports.expenseEntries')" align="right">
+          <template #default="scope">{{ number(scope.row.expenseCount) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('reports.revenue')" align="right">
+          <template #default="scope">{{
+            money(scope.row.totalSales, scope.row.currency)
+          }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('reports.expenses')" align="right">
+          <template #default="scope">{{
+            money(scope.row.totalExpenses, scope.row.currency)
+          }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('reports.balance')" align="right">
+          <template #default="scope">{{ money(scope.row.balance, scope.row.currency) }}</template>
+        </ElTableColumn>
+      </ElTable>
+      <EmptyState v-else :title="t('reports.noData')" :body="t('reports.noExchange')" />
     </section>
 
     <section class="panel data-panel">
@@ -365,9 +365,18 @@ onMounted(load)
         <ElTable v-if="inventory?.byProduct.length" :data="inventory.byProduct">
           <ElTableColumn :label="t('reports.product')" min-width="200">
             <template #default="scope">
-              <div class="cell-stack">
-                <strong>{{ scope.row.label }}</strong
-                ><code>{{ scope.row.sku }}</code>
+              <div class="inventory-product-cell">
+                <div class="product-thumb" aria-hidden="true">
+                  <SecureImage :src="scope.row.productImageUrl" alt=""
+                    ><span>{{
+                      scope.row.label?.trim().charAt(0).toUpperCase() || '?'
+                    }}</span></SecureImage
+                  >
+                </div>
+                <div class="cell-stack">
+                  <strong>{{ scope.row.label }}</strong
+                  ><code class="sku-code">{{ scope.row.sku }}</code>
+                </div>
               </div>
             </template>
           </ElTableColumn>

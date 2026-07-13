@@ -803,7 +803,7 @@ body.nav-open {
 /* Exhibition calendar: dates read like pinned show tickets */
 .event-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--ink-150);
   border-radius: var(--radius);
