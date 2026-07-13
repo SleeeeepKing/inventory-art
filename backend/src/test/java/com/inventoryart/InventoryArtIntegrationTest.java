@@ -34,12 +34,15 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -111,7 +114,48 @@ class InventoryArtIntegrationTest {
             "version");
     assertThat(columns("inventory_sale_batches"))
         .containsExactlyInAnyOrder(
-            "id", "tenant_id", "event_id", "attributed_date", "operator_id", "created_at");
+            "id",
+            "tenant_id",
+            "event_id",
+            "attributed_date",
+            "operator_id",
+            "created_at",
+            "status",
+            "updated_by",
+            "updated_at",
+            "cancelled_by",
+            "cancelled_at",
+            "version");
+    assertThat(columns("inventory_sale_lines"))
+        .containsExactlyInAnyOrder(
+            "id",
+            "tenant_id",
+            "sale_batch_id",
+            "product_id",
+            "quantity",
+            "created_at",
+            "updated_at");
+    assertThat(columns("expense_categories"))
+        .containsExactlyInAnyOrder(
+            "id", "tenant_id", "name", "enabled", "created_at", "updated_at", "version");
+    assertThat(columns("sales_event_expenses"))
+        .containsExactlyInAnyOrder(
+            "id",
+            "tenant_id",
+            "event_id",
+            "category_id",
+            "amount",
+            "currency",
+            "expense_date",
+            "note",
+            "status",
+            "created_by",
+            "created_at",
+            "updated_by",
+            "updated_at",
+            "voided_by",
+            "voided_at",
+            "version");
     assertThat(columns("stored_files"))
         .contains(
             "product_id",
@@ -120,6 +164,114 @@ class InventoryArtIntegrationTest {
             "preview_size",
             "preview_checksum")
         .doesNotContain("purpose", "resource_type", "resource_id");
+  }
+
+  @Test
+  void v10BackfillsCurrentSaleLinesWithoutChangingStock() {
+    String schema = "migration_" + UUID.randomUUID().toString().replace("-", "");
+    String separator = POSTGRES.getJdbcUrl().contains("?") ? "&" : "?";
+    DriverManagerDataSource dataSource =
+        new DriverManagerDataSource(
+            POSTGRES.getJdbcUrl() + separator + "currentSchema=" + schema,
+            POSTGRES.getUsername(),
+            POSTGRES.getPassword());
+    Flyway v9 =
+        Flyway.configure()
+            .dataSource(dataSource)
+            .schemas(schema)
+            .defaultSchema(schema)
+            .locations("classpath:db/migration")
+            .target(MigrationVersion.fromVersion("9"))
+            .load();
+    v9.migrate();
+    JdbcTemplate migration = new JdbcTemplate(dataSource);
+    UUID tenantId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID eventId = UUID.randomUUID();
+    UUID batchId = UUID.randomUUID();
+    migration.update(
+        "insert into tenants(id,name,slug,default_currency,timezone,locale,enabled,created_at,updated_at) values (?,?,?,'EUR','Europe/Paris','en',true,now(),now())",
+        tenantId,
+        "Migration tenant",
+        "migration-" + tenantId);
+    migration.update(
+        "insert into users(id,tenant_id,username,email,password_hash,display_name,role,preferred_locale,enabled,created_at,updated_at) values (?,?,?,?,?,?, 'USER','en',true,now(),now())",
+        userId,
+        tenantId,
+        "migration-" + userId,
+        userId + "@migration.test",
+        "hash",
+        "Migration user");
+    migration.update(
+        "insert into products(id,tenant_id,sku,name,sale_price,currency,current_stock,low_stock_threshold,enabled,version,created_at,updated_at) values (?,?,?,'Migration product',10,'EUR',7,0,true,0,now(),now())",
+        productId,
+        tenantId,
+        "MIG-" + productId);
+    migration.update(
+        "insert into sales_events(id,tenant_id,name,enabled,created_at,updated_at,start_date,end_date) values (?,?, 'Migration expo',true,now(),now(),'2026-07-10','2026-07-12')",
+        eventId,
+        tenantId);
+    migration.update(
+        "insert into inventory_sale_batches(id,tenant_id,event_id,attributed_date,operator_id,created_at) values (?,?,?,'2026-07-12',?,now())",
+        batchId,
+        tenantId,
+        eventId,
+        userId);
+    migration.update(
+        "insert into inventory_movements(id,tenant_id,product_id,movement_type,quantity,stock_before,stock_after,sale_batch_id,reference,operator_id,created_at) values (?,?,?,?,?,?,?,?,?,?,now()),(?,?,?,?,?,?,?,?,?,?,now())",
+        UUID.randomUUID(),
+        tenantId,
+        productId,
+        "SALE",
+        -2,
+        10,
+        8,
+        batchId,
+        "Sale one",
+        userId,
+        UUID.randomUUID(),
+        tenantId,
+        productId,
+        "SALE",
+        -1,
+        8,
+        7,
+        batchId,
+        "Sale two",
+        userId);
+
+    Flyway.configure()
+        .dataSource(dataSource)
+        .schemas(schema)
+        .defaultSchema(schema)
+        .locations("classpath:db/migration")
+        .load()
+        .migrate();
+
+    assertThat(
+            migration.queryForObject(
+                "select quantity from inventory_sale_lines where tenant_id=? and sale_batch_id=? and product_id=?",
+                Integer.class,
+                tenantId,
+                batchId,
+                productId))
+        .isEqualTo(3);
+    assertThat(
+            migration.queryForObject(
+                "select current_stock from products where tenant_id=? and id=?",
+                Integer.class,
+                tenantId,
+                productId))
+        .isEqualTo(7);
+    assertThat(
+            migration.queryForObject(
+                "select status from inventory_sale_batches where tenant_id=? and id=?",
+                String.class,
+                tenantId,
+                batchId))
+        .isEqualTo("ACTIVE");
+    jdbc.execute("drop schema " + schema + " cascade");
   }
 
   @Test
@@ -529,6 +681,364 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
+  void inventorySaleCanBeEditedFilteredAndPermanentlyCancelled() throws Exception {
+    Fixture fixture = fixture("sale-edit");
+    Fixture other = fixture("sale-other");
+    Product first = product(fixture, "EDIT-FIRST", "Print", 10);
+    Product removed = product(fixture, "EDIT-REMOVED", "Sculpture", 5);
+    Product replacement = product(fixture, "EDIT-REPLACEMENT", "Print", 8);
+    Product otherProduct = product(other, "EDIT-OTHER", 20);
+    SalesEvent originalEvent = event(fixture, "Original Expo", "2026-07-10", "2026-07-12");
+    SalesEvent replacementEvent = event(fixture, "Historical Expo", "2026-07-18", "2026-07-20");
+    replacementEvent.setEnabled(false);
+    events.save(replacementEvent);
+    mvc.perform(delete("/api/v1/products/{id}", replacement.getId()).with(userJwt(fixture)))
+        .andExpect(status().isNoContent());
+
+    JsonNode created =
+        createSale(
+            fixture,
+            originalEvent,
+            List.of(
+                Map.of("productId", first.getId(), "quantity", 3),
+                Map.of("productId", removed.getId(), "quantity", 1)));
+    UUID saleId = UUID.fromString(created.get("id").asText());
+    assertThat(created.get("version").asLong()).isZero();
+    assertThat(products.findById(first.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
+    assertThat(products.findById(removed.getId()).orElseThrow().getCurrentStock()).isEqualTo(4);
+
+    mvc.perform(get("/api/v1/inventory/sales/{id}", saleId).with(userJwt(other)))
+        .andExpect(status().isNotFound());
+    mvc.perform(
+            put("/api/v1/inventory/sales/{id}", saleId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "eventId",
+                            replacementEvent.getId(),
+                            "version",
+                            0,
+                            "items",
+                            List.of(
+                                Map.of("productId", first.getId(), "quantity", 5),
+                                Map.of("productId", otherProduct.getId(), "quantity", 2))))))
+        .andExpect(status().isNotFound());
+    assertThat(products.findById(first.getId()).orElseThrow().getCurrentStock()).isEqualTo(7);
+
+    String updatedBody =
+        mvc.perform(
+                put("/api/v1/inventory/sales/{id}", saleId)
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "eventId",
+                                replacementEvent.getId(),
+                                "version",
+                                0,
+                                "items",
+                                List.of(
+                                    Map.of("productId", first.getId(), "quantity", 5),
+                                    Map.of("productId", replacement.getId(), "quantity", 2))))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.eventName").value("Historical Expo"))
+            .andExpect(jsonPath("$.attributedDate").value("2026-07-20"))
+            .andExpect(jsonPath("$.version").value(1))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    JsonNode updated = json.readTree(updatedBody);
+    assertThat(updated.get("items").size()).isEqualTo(2);
+    assertThat(products.findById(first.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
+    assertThat(products.findById(removed.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
+    assertThat(products.findById(replacement.getId()).orElseThrow().getCurrentStock()).isEqualTo(6);
+
+    mvc.perform(
+            put("/api/v1/inventory/sales/{id}", saleId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "eventId",
+                            replacementEvent.getId(),
+                            "version",
+                            0,
+                            "items",
+                            List.of(Map.of("productId", first.getId(), "quantity", 1))))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
+    mvc.perform(
+            put("/api/v1/inventory/sales/{id}", saleId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "eventId",
+                            replacementEvent.getId(),
+                            "version",
+                            1,
+                            "items",
+                            List.of(
+                                Map.of("productId", first.getId(), "quantity", 100),
+                                Map.of("productId", replacement.getId(), "quantity", 1))))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+    assertThat(products.findById(first.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
+    assertThat(products.findById(replacement.getId()).orElseThrow().getCurrentStock()).isEqualTo(6);
+
+    mvc.perform(
+            get("/api/v1/inventory/operations")
+                .with(userJwt(fixture))
+                .param("types", "ADJUSTMENT_IN", "SALE")
+                .param("productIds", UUID.randomUUID().toString(), first.getId().toString())
+                .param("productCategories", "Print")
+                .param("eventId", replacementEvent.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.items[0].kind").value("SALE"))
+        .andExpect(jsonPath("$.items[0].items.length()").value(2));
+    mvc.perform(
+            get("/api/v1/inventory/operations")
+                .with(userJwt(fixture))
+                .param("types", "SALE")
+                .param("productIds", first.getId().toString())
+                .param("productCategories", "Sculpture"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(0));
+    mvc.perform(
+            get("/api/v1/reports/inventory-sales")
+                .with(userJwt(fixture))
+                .param("start", "2026-07-20")
+                .param("end", "2026-07-20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.summary.units").value(7))
+        .andExpect(jsonPath("$.summary.batches").value(1));
+    assertThat(
+            mvc.perform(get("/api/v1/inventory/export").with(userJwt(fixture)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString())
+        .contains(",SALE,-5,")
+        .contains(",SALE,-2,")
+        .doesNotContain("SALE_CORRECTION");
+
+    String cancelledBody =
+        mvc.perform(
+                post("/api/v1/inventory/sales/{id}/cancel", saleId)
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(Map.of("version", 1))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("CANCELLED"))
+            .andExpect(jsonPath("$.version").value(2))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    long cancelledVersion = json.readTree(cancelledBody).get("version").asLong();
+    assertThat(products.findById(first.getId()).orElseThrow().getCurrentStock()).isEqualTo(10);
+    assertThat(products.findById(removed.getId()).orElseThrow().getCurrentStock()).isEqualTo(5);
+    assertThat(products.findById(replacement.getId()).orElseThrow().getCurrentStock()).isEqualTo(8);
+    mvc.perform(
+            post("/api/v1/inventory/sales/{id}/cancel", saleId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("version", cancelledVersion))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INVENTORY_SALE_CANCELLED"));
+    mvc.perform(get("/api/v1/inventory/operations").with(userJwt(fixture)).param("types", "SALE"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(0));
+    mvc.perform(
+            get("/api/v1/reports/inventory-sales")
+                .with(userJwt(fixture))
+                .param("start", "2026-07-20")
+                .param("end", "2026-07-20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.summary.units").value(0))
+        .andExpect(jsonPath("$.byProduct.length()").value(0));
+    assertThat(
+            mvc.perform(get("/api/v1/inventory/export").with(userJwt(fixture)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString())
+        .doesNotContain(",SALE,")
+        .doesNotContain("SALE_REVERSAL");
+  }
+
+  @Test
+  void eventExpensesSupportSharedCategoriesReportsVoidingAndTenantIsolation() throws Exception {
+    Fixture fixture = fixture("expense");
+    Fixture other = fixture("expense-other");
+    SalesEvent event = event(fixture, "Expense Only Expo", "2026-07-10", "2026-07-12");
+    SalesEvent otherEvent = event(other, "Other Expo", "2026-07-10", "2026-07-12");
+
+    String categoryBody =
+        mvc.perform(
+                post("/api/v1/expense-categories")
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(Map.of("name", "Travel"))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.version").value(0))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID categoryId = UUID.fromString(json.readTree(categoryBody).get("id").asText());
+    mvc.perform(
+            post("/api/v1/expense-categories")
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("name", " travel "))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DUPLICATE_EXPENSE_CATEGORY"));
+    mvc.perform(
+            put("/api/v1/expense-categories/{id}", categoryId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of("name", "Travel", "enabled", false, "version", 0))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.enabled").value(false))
+        .andExpect(jsonPath("$.version").value(1));
+    mvc.perform(
+            post("/api/v1/sales-events/{eventId}/expenses", event.getId())
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(expenseBody(categoryId, "12.50", "disabled")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EXPENSE_CATEGORY_DISABLED"));
+    mvc.perform(
+            put("/api/v1/expense-categories/{id}", categoryId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of("name", "Transport", "enabled", true, "version", 1))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.version").value(2));
+
+    mvc.perform(
+            post("/api/v1/sales-events/{eventId}/expenses", event.getId())
+                .with(userJwt(other))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(expenseBody(categoryId, "12.50", "cross tenant event")))
+        .andExpect(status().isNotFound());
+    String otherCategoryBody =
+        mvc.perform(
+                post("/api/v1/expense-categories")
+                    .with(userJwt(other))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(Map.of("name", "Other category"))))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID otherCategoryId = UUID.fromString(json.readTree(otherCategoryBody).get("id").asText());
+    mvc.perform(
+            post("/api/v1/sales-events/{eventId}/expenses", event.getId())
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(expenseBody(otherCategoryId, "12.50", "cross tenant category")))
+        .andExpect(status().isNotFound());
+
+    String expenseResponse =
+        mvc.perform(
+                post("/api/v1/sales-events/{eventId}/expenses", event.getId())
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(expenseBody(categoryId, "20.00", "Train")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.currency").value("EUR"))
+            .andExpect(jsonPath("$.categoryName").value("Transport"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID expenseId = UUID.fromString(json.readTree(expenseResponse).get("id").asText());
+    mvc.perform(
+            get("/api/v1/reports/dashboard")
+                .with(userJwt(fixture))
+                .param("start", "2026-07-12")
+                .param("end", "2026-07-12"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.currencies[0].totalSales").value(0))
+        .andExpect(jsonPath("$.currencies[0].totalExpenses").value(20))
+        .andExpect(jsonPath("$.currencies[0].balance").value(-20))
+        .andExpect(jsonPath("$.byEvent[0].label").value("Expense Only Expo"))
+        .andExpect(jsonPath("$.byEvent[0].transactions").value(0))
+        .andExpect(jsonPath("$.byEvent[0].expenseCount").value(1))
+        .andExpect(jsonPath("$.expensesByCategory[0].label").value("Transport"));
+
+    mvc.perform(
+            put("/api/v1/sales-events/{eventId}/expenses/{id}", event.getId(), expenseId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(expenseUpdateBody(categoryId, "25.00", "Hotel", 0)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.amount").value(25))
+        .andExpect(jsonPath("$.version").value(1));
+    mvc.perform(
+            put("/api/v1/sales-events/{eventId}/expenses/{id}", event.getId(), expenseId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(expenseUpdateBody(categoryId, "30.00", "Stale", 0)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
+    mvc.perform(delete("/api/v1/sales-events/{id}", event.getId()).with(userJwt(fixture)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("SALES_EVENT_IN_USE"));
+
+    mvc.perform(
+            post("/api/v1/sales-events/{eventId}/expenses/{id}/void", event.getId(), expenseId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("version", 1))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("VOIDED"))
+        .andExpect(jsonPath("$.version").value(2));
+    mvc.perform(
+            post("/api/v1/sales-events/{eventId}/expenses/{id}/void", event.getId(), expenseId)
+                .with(userJwt(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("version", 2))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVENT_EXPENSE_VOIDED"));
+    mvc.perform(
+            get("/api/v1/sales-events/{eventId}/expenses", event.getId()).with(userJwt(fixture)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(0));
+    mvc.perform(
+            get("/api/v1/sales-events/{eventId}/expenses", event.getId())
+                .with(userJwt(fixture))
+                .param("includeVoided", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1));
+    mvc.perform(
+            get("/api/v1/sales-events/{eventId}/expenses", otherEvent.getId())
+                .with(userJwt(fixture)))
+        .andExpect(status().isNotFound());
+    mvc.perform(
+            get("/api/v1/reports/dashboard")
+                .with(userJwt(fixture))
+                .param("start", "2026-07-12")
+                .param("end", "2026-07-12"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.currencies[0].totalExpenses").value(0))
+        .andExpect(jsonPath("$.currencies[0].balance").value(0))
+        .andExpect(jsonPath("$.byEvent.length()").value(0))
+        .andExpect(jsonPath("$.expensesByCategory.length()").value(0));
+    mvc.perform(delete("/api/v1/sales-events/{id}", event.getId()).with(userJwt(fixture)))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
   void financialReportsContainOnlyRecordedTransactionsAndEventBreakdown() throws Exception {
     Fixture fixture = fixture("report");
     SalesEvent event = event(fixture, "Report Expo", "2026-07-10", "2026-07-12");
@@ -605,6 +1115,50 @@ class InventoryArtIntegrationTest {
         Map.of("eventId", event.getId(), "orderDate", "2026-07-11T10:30:00Z", "orders", lines));
   }
 
+  private JsonNode createSale(Fixture fixture, SalesEvent event, Object items) throws Exception {
+    String response =
+        mvc.perform(
+                post("/api/v1/inventory/sales")
+                    .with(userJwt(fixture))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(Map.of("eventId", event.getId(), "items", items))))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return json.readTree(response);
+  }
+
+  private String expenseBody(UUID categoryId, String amount, String note) throws Exception {
+    return json.writeValueAsString(
+        Map.of(
+            "categoryId",
+            categoryId,
+            "amount",
+            new BigDecimal(amount),
+            "expenseDate",
+            "2026-07-11",
+            "note",
+            note));
+  }
+
+  private String expenseUpdateBody(UUID categoryId, String amount, String note, long version)
+      throws Exception {
+    return json.writeValueAsString(
+        Map.of(
+            "categoryId",
+            categoryId,
+            "amount",
+            new BigDecimal(amount),
+            "expenseDate",
+            "2026-07-11",
+            "note",
+            note,
+            "version",
+            version));
+  }
+
   private Fixture fixture(String prefix) {
     String nonce = UUID.randomUUID().toString().substring(0, 8);
     Tenant tenant =
@@ -653,6 +1207,10 @@ class InventoryArtIntegrationTest {
   }
 
   private Product product(Fixture fixture, String sku, int stock) {
+    return product(fixture, sku, "Test", stock);
+  }
+
+  private Product product(Fixture fixture, String sku, String category, int stock) {
     Product product =
         products.save(
             new Product(
@@ -660,7 +1218,7 @@ class InventoryArtIntegrationTest {
                 fixture.tenant().getId(),
                 sku + UUID.randomUUID().toString().substring(0, 4),
                 "Product",
-                "Test",
+                category,
                 null,
                 null,
                 new BigDecimal("2.00"),

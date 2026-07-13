@@ -36,7 +36,7 @@ public class AuditService {
       metadata.forEach(
           (k, v) -> {
             if (SENSITIVE.stream().noneMatch(s -> k.toLowerCase().contains(s)))
-              safe.put(k, String.valueOf(v));
+              safe.put(k, sanitize(v, 0));
           });
     logs.save(
         new AuditLog(
@@ -50,6 +50,29 @@ public class AuditService {
             req == null ? null : ip(req),
             req == null ? null : truncate(req.getHeader("User-Agent"), 500),
             safe));
+  }
+
+  private Object sanitize(Object value, int depth) {
+    if (value == null) return null;
+    if (depth >= 4) return truncate(String.valueOf(value), 2000);
+    if (value instanceof Number || value instanceof Boolean) return value;
+    if (value instanceof Map<?, ?> map) {
+      Map<String, Object> result = new LinkedHashMap<>();
+      map.entrySet().stream()
+          .limit(100)
+          .forEach(
+              entry -> {
+                String key = String.valueOf(entry.getKey());
+                if (SENSITIVE.stream().noneMatch(s -> key.toLowerCase().contains(s))) {
+                  result.put(key, sanitize(entry.getValue(), depth + 1));
+                }
+              });
+      return result;
+    }
+    if (value instanceof Collection<?> collection) {
+      return collection.stream().limit(100).map(item -> sanitize(item, depth + 1)).toList();
+    }
+    return truncate(String.valueOf(value), 2000);
   }
 
   private HttpServletRequest request() {

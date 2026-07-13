@@ -51,6 +51,31 @@ public class InventoryService {
   }
 
   @Transactional
+  public InventoryMovement applySaleCorrection(
+      UUID tenantId,
+      UUID productId,
+      int stockDelta,
+      UUID saleBatchId,
+      MovementType type,
+      UUID operator) {
+    if (type != MovementType.SALE_CORRECTION && type != MovementType.SALE_REVERSAL) {
+      throw new BusinessException("INVALID_MOVEMENT_TYPE", "Invalid sale correction type");
+    }
+    if (saleBatchId == null) {
+      throw new BusinessException("INVALID_SALE_LINE", "Sale batch is required");
+    }
+    return applyInternal(
+        tenantId,
+        productId,
+        stockDelta,
+        type,
+        saleBatchId,
+        type == MovementType.SALE_REVERSAL ? "Inventory sale cancelled" : "Inventory sale edited",
+        null,
+        operator);
+  }
+
+  @Transactional
   public InventoryMovement setStock(
       UUID tenantId, UUID productId, int quantity, String remark, UUID operator) {
     if (tenantId == null || productId == null) {

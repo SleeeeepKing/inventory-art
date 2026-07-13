@@ -19,13 +19,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class InventorySalesReportService {
   private static final String BASE =
       """
-        from inventory_movements m
-        join inventory_sale_batches b on b.tenant_id=m.tenant_id and b.id=m.sale_batch_id
-        join products p on p.tenant_id=m.tenant_id and p.id=m.product_id
+        from inventory_sale_lines l
+        join inventory_sale_batches b on b.tenant_id=l.tenant_id and b.id=l.sale_batch_id
+        join products p on p.tenant_id=l.tenant_id and p.id=l.product_id
         join sales_events e on e.tenant_id=b.tenant_id and e.id=b.event_id
-        where (:tenantId is null or m.tenant_id=cast(:tenantId as uuid))
+        where (:tenantId is null or l.tenant_id=cast(:tenantId as uuid))
           and b.attributed_date>=:start and b.attributed_date<=:end
-          and m.movement_type='SALE' and m.quantity<0
+          and b.status='ACTIVE'
         """;
 
   private final NamedParameterJdbcTemplate jdbc;
@@ -60,7 +60,7 @@ public class InventorySalesReportService {
             .addValue("end", Date.valueOf(end));
     ReportDtos.InventorySalesMetrics summary =
         jdbc.queryForObject(
-            "select coalesce(sum(abs(m.quantity)),0) units,count(distinct b.id) batches " + BASE,
+            "select coalesce(sum(l.quantity),0) units,count(distinct b.id) batches " + BASE,
             params,
             (rs, row) ->
                 new ReportDtos.InventorySalesMetrics(rs.getLong("units"), rs.getLong("batches")));
@@ -78,7 +78,7 @@ public class InventorySalesReportService {
     return jdbc.query(
         """
             select %s product_id,%s sku,%s label,
-                   sum(abs(m.quantity)) units,count(distinct b.id) batches
+                   sum(l.quantity) units,count(distinct b.id) batches
             """
                 .formatted(productId, sku, label)
             + BASE

@@ -1,6 +1,7 @@
 package com.inventoryart.inventory;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -8,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface InventoryMovementRepository extends JpaRepository<InventoryMovement, UUID> {
+  List<InventoryMovement> findAllByTenantIdAndIdIn(UUID tenantId, List<UUID> ids);
+
   @Query(
       """
         select m from InventoryMovement m

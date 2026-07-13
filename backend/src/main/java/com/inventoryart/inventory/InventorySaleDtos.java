@@ -18,6 +18,22 @@ public final class InventorySaleDtos {
   public record SaleRequest(
       @NotNull UUID eventId, @NotEmpty @Size(max = 100) List<@Valid SaleLine> items) {}
 
+  public record SaleUpdateRequest(
+      @NotNull UUID eventId,
+      @NotNull @Min(0) Long version,
+      @NotEmpty @Size(max = 100) List<@Valid SaleLine> items) {}
+
+  public record CancelRequest(@NotNull @Min(0) Long version) {}
+
+  public record SaleItemResponse(
+      UUID id,
+      UUID productId,
+      String productName,
+      String productSku,
+      String productImageUrl,
+      int currentStock,
+      int quantity) {}
+
   public record SaleResponse(
       UUID id,
       UUID eventId,
@@ -25,5 +41,9 @@ public final class InventorySaleDtos {
       LocalDate attributedDate,
       UUID operatorId,
       Instant createdAt,
+      Instant updatedAt,
+      String status,
+      long version,
+      List<SaleItemResponse> items,
       List<InventoryController.MovementResponse> movements) {}
 }

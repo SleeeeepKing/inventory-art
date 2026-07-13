@@ -11,6 +11,8 @@ public final class ReportDtos {
   public record CurrencyMetrics(
       String currency,
       BigDecimal totalSales,
+      BigDecimal totalExpenses,
+      BigDecimal balance,
       long transactionCount,
       BigDecimal averageTransactionValue) {}
 
@@ -18,7 +20,21 @@ public final class ReportDtos {
       String bucket, String currency, BigDecimal totalSales, long transactions) {}
 
   public record Breakdown(
-      String label, String currency, BigDecimal totalSales, long transactions) {}
+      UUID eventId,
+      String label,
+      String currency,
+      BigDecimal totalSales,
+      BigDecimal totalExpenses,
+      BigDecimal balance,
+      long transactions,
+      long expenseCount) {}
+
+  public record ExpenseCategoryBreakdown(
+      UUID categoryId,
+      String label,
+      String currency,
+      BigDecimal totalExpenses,
+      long expenseCount) {}
 
   public record Dashboard(
       LocalDate startDate,
@@ -28,7 +44,8 @@ public final class ReportDtos {
       String granularity,
       List<CurrencyMetrics> currencies,
       List<TrendPoint> salesTrend,
-      List<Breakdown> byEvent) {}
+      List<Breakdown> byEvent,
+      List<ExpenseCategoryBreakdown> expensesByCategory) {}
 
   public record InventorySalesMetrics(long units, long batches) {}
 

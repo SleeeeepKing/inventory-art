@@ -50,6 +50,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InventoryController {
   private final InventoryService service;
   private final InventorySaleService sales;
+  private final InventoryOperationService operations;
   private final InventoryMovementRepository movements;
   private final InventorySaleBatchRepository saleBatches;
   private final SalesEventRepository events;
@@ -61,6 +62,7 @@ public class InventoryController {
   public InventoryController(
       InventoryService service,
       InventorySaleService sales,
+      InventoryOperationService operations,
       InventoryMovementRepository movements,
       InventorySaleBatchRepository saleBatches,
       SalesEventRepository events,
@@ -70,6 +72,7 @@ public class InventoryController {
       AuditService audit) {
     this.service = service;
     this.sales = sales;
+    this.operations = operations;
     this.movements = movements;
     this.saleBatches = saleBatches;
     this.events = events;
@@ -154,14 +157,46 @@ public class InventoryController {
         batch.getId(),
         "SUCCESS",
         Map.of("items", response.size(), "eventId", batch.getEventId()));
-    return new InventorySaleDtos.SaleResponse(
-        batch.getId(),
-        batch.getEventId(),
-        result.eventName(),
-        batch.getAttributedDate(),
-        batch.getOperatorId(),
-        batch.getCreatedAt(),
-        response);
+    return saleResponse(result, response);
+  }
+
+  @GetMapping("/sales/{id}")
+  public InventorySaleDtos.SaleResponse getSale(@PathVariable UUID id) {
+    return saleResponse(sales.get(current.tenantId(), id), List.of());
+  }
+
+  @PutMapping("/sales/{id}")
+  public InventorySaleDtos.SaleResponse updateSale(
+      @PathVariable UUID id, @Valid @RequestBody InventorySaleDtos.SaleUpdateRequest request) {
+    UUID tenantId = current.tenantId();
+    InventorySaleService.Result result = sales.update(tenantId, current.userId(), id, request);
+    audit.record(
+        tenantId,
+        "INVENTORY_SALE_UPDATE",
+        "INVENTORY_SALE_BATCH",
+        id,
+        "SUCCESS",
+        Map.of(
+            "before", result.before(),
+            "after", saleSnapshot(result),
+            "eventId", result.batch().getEventId()));
+    return saleResponse(result, movementResponses(result));
+  }
+
+  @PostMapping("/sales/{id}/cancel")
+  public InventorySaleDtos.SaleResponse cancelSale(
+      @PathVariable UUID id, @Valid @RequestBody InventorySaleDtos.CancelRequest request) {
+    UUID tenantId = current.tenantId();
+    InventorySaleService.Result result =
+        sales.cancel(tenantId, current.userId(), id, request.version());
+    audit.record(
+        tenantId,
+        "INVENTORY_SALE_CANCEL",
+        "INVENTORY_SALE_BATCH",
+        id,
+        "SUCCESS",
+        Map.of("before", result.before(), "after", saleSnapshot(result)));
+    return saleResponse(result, movementResponses(result));
   }
 
   @GetMapping("/movements")
@@ -201,6 +236,18 @@ public class InventoryController {
             }));
   }
 
+  @GetMapping("/operations")
+  public PageResponse<InventoryOperationService.OperationResponse> operations(
+      @RequestParam(required = false) List<MovementType> types,
+      @RequestParam(required = false) List<UUID> productIds,
+      @RequestParam(required = false) List<String> productCategories,
+      @RequestParam(required = false) UUID eventId,
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return operations.search(
+        current.tenantId(), types, productIds, productCategories, eventId, page, size);
+  }
+
   @GetMapping(value = "/export", produces = "text/csv")
   public void export(HttpServletResponse response) throws IOException {
     response.setContentType("text/csv");
@@ -209,38 +256,27 @@ public class InventoryController {
     writer.println(
         "createdAt,productId,type,quantity,stockBefore,stockAfter,event,attributedDate,reference,remark");
     int page = 0;
-    org.springframework.data.domain.Page<InventoryMovement> result;
     UUID tenantId = current.tenantId();
+    PageResponse<InventoryOperationService.OperationResponse> result;
     do {
-      result =
-          movements.search(
-              tenantId,
-              null,
-              null,
-              null,
-              from(null),
-              to(null),
-              PageRequest.of(page++, 1000, Sort.by(Sort.Direction.DESC, "createdAt")));
-      Map<UUID, InventorySaleBatch> batches = batches(tenantId, result.getContent());
-      Map<UUID, String> eventNames = eventNames(tenantId, batches.values().stream().toList());
-      result.forEach(
-          movement -> {
-            UUID saleBatchId = movement.getSaleBatchId();
-            InventorySaleBatch batch = saleBatchId == null ? null : batches.get(saleBatchId);
-            writer.printf(
-                "%s,%s,%s,%d,%d,%d,\"%s\",%s,\"%s\",\"%s\"%n",
-                movement.getCreatedAt(),
-                movement.getProductId(),
-                movement.getMovementType(),
-                movement.getQuantity(),
-                movement.getStockBefore(),
-                movement.getStockAfter(),
-                csv(batch == null ? null : eventNames.get(batch.getEventId())),
-                batch == null ? "" : batch.getAttributedDate(),
-                csv(movement.getReference()),
-                csv(movement.getRemark()));
-          });
-    } while (result.hasNext());
+      result = operations.search(tenantId, null, null, null, null, page++, 100);
+      for (InventoryOperationService.OperationResponse operation : result.items()) {
+        for (InventoryOperationService.ItemResponse item : operation.items()) {
+          writer.printf(
+              "%s,%s,%s,%d,%s,%s,\"%s\",%s,\"%s\",\"%s\"%n",
+              operation.createdAt(),
+              item.productId(),
+              operation.type(),
+              operation.kind().equals("SALE") ? -item.quantity() : operation.quantity(),
+              operation.stockBefore() == null ? "" : operation.stockBefore(),
+              operation.stockAfter() == null ? "" : operation.stockAfter(),
+              csv(operation.eventName()),
+              operation.attributedDate() == null ? "" : operation.attributedDate(),
+              csv(operation.reference()),
+              csv(operation.remark()));
+        }
+      }
+    } while (page < result.totalPages());
   }
 
   private int signed(MovementType type, int quantity) {
@@ -300,6 +336,70 @@ public class InventoryController {
 
   private static String blankToNull(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private InventorySaleDtos.SaleResponse saleResponse(
+      InventorySaleService.Result result, List<MovementResponse> movementResponses) {
+    InventorySaleBatch batch = result.batch();
+    Map<UUID, Product> productMap =
+        products
+            .findAllByTenantIdAndIdIn(
+                current.tenantId(),
+                result.lines().stream().map(InventorySaleLine::getProductId).distinct().toList())
+            .stream()
+            .collect(Collectors.toMap(Product::getId, product -> product));
+    List<InventorySaleDtos.SaleItemResponse> items =
+        result.lines().stream()
+            .map(
+                line -> {
+                  Product product = productMap.get(line.getProductId());
+                  return new InventorySaleDtos.SaleItemResponse(
+                      line.getId(),
+                      line.getProductId(),
+                      product == null ? null : product.getName(),
+                      product == null ? null : product.getSku(),
+                      product == null
+                          ? null
+                          : files.productImageUrl(product.getId(), product.getImageObjectKey()),
+                      product == null ? 0 : product.getCurrentStock(),
+                      line.getQuantity());
+                })
+            .toList();
+    return new InventorySaleDtos.SaleResponse(
+        batch.getId(),
+        batch.getEventId(),
+        result.eventName(),
+        batch.getAttributedDate(),
+        batch.getOperatorId(),
+        batch.getCreatedAt(),
+        batch.getUpdatedAt(),
+        batch.getStatus().name(),
+        batch.getVersion(),
+        items,
+        movementResponses);
+  }
+
+  private List<MovementResponse> movementResponses(InventorySaleService.Result result) {
+    return result.movements().stream()
+        .map(movement -> MovementResponse.from(movement, result.batch(), result.eventName()))
+        .toList();
+  }
+
+  private Map<String, Object> saleSnapshot(InventorySaleService.Result result) {
+    InventorySaleBatch batch = result.batch();
+    List<Map<String, Object>> items =
+        result.lines().stream()
+            .map(
+                line ->
+                    Map.<String, Object>of(
+                        "productId", line.getProductId(), "quantity", line.getQuantity()))
+            .toList();
+    return Map.of(
+        "eventId", batch.getEventId(),
+        "attributedDate", batch.getAttributedDate(),
+        "status", batch.getStatus().name(),
+        "version", batch.getVersion(),
+        "items", items);
   }
 
   private String csv(String value) {

@@ -28,6 +28,8 @@ public interface SalesEventRepository extends JpaRepository<SalesEvent, UUID> {
             select 1 from orders where tenant_id=:tenantId and event_id=:eventId
             union all
             select 1 from inventory_sale_batches where tenant_id=:tenantId and event_id=:eventId
+            union all
+            select 1 from sales_event_expenses where tenant_id=:tenantId and event_id=:eventId
         )
         """,
       nativeQuery = true)

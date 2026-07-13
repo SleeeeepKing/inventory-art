@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -75,6 +76,11 @@ public class ProductController {
         products
             .findByIdAndTenantId(id, current.tenantId())
             .orElseThrow(() -> new NotFoundException("Product")));
+  }
+
+  @GetMapping("/categories")
+  public List<String> categories() {
+    return products.findCategories(current.tenantId());
   }
 
   @PostMapping

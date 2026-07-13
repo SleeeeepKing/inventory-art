@@ -5,6 +5,7 @@ import com.inventoryart.exception.NotFoundException;
 import com.inventoryart.security.CurrentUserService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
@@ -52,17 +53,36 @@ public class ReportService {
             .addValue("tenantId", tenantId == null ? null : tenantId.toString(), Types.VARCHAR)
             .addValue("from", Timestamp.from(from))
             .addValue("to", Timestamp.from(to))
+            .addValue("startDate", Date.valueOf(start))
+            .addValue("endDate", Date.valueOf(end))
             .addValue("timezone", settings.zone().getId())
-            .addValue("granularity", granularity.name());
+            .addValue("granularity", granularity.name())
+            .addValue("defaultCurrency", settings.currency());
 
     List<ReportDtos.CurrencyMetrics> metrics =
         jdbc.query(
             """
-              select currency, coalesce(sum(total_amount),0) total_sales,
-                     count(*) transaction_count, coalesce(avg(total_amount),0) average_value
-                from orders
-               where (:tenantId is null or tenant_id=cast(:tenantId as uuid))
-                 and order_date>=:from and order_date<:to
+              with financial as (
+                select currency,total_amount sales,0::numeric expenses,1 transactions
+                  from orders
+                 where (:tenantId is null or tenant_id=cast(:tenantId as uuid))
+                   and order_date>=:from and order_date<:to
+                union all
+                select x.currency,0::numeric sales,x.amount expenses,0 transactions
+                  from sales_event_expenses x
+                  join sales_events e on e.tenant_id=x.tenant_id and e.id=x.event_id
+                 where (:tenantId is null or x.tenant_id=cast(:tenantId as uuid))
+                   and x.status='ACTIVE'
+                   and e.end_date>=:startDate and e.end_date<=:endDate
+                union all
+                select :defaultCurrency,0::numeric,0::numeric,0
+              )
+              select currency,coalesce(sum(sales),0) total_sales,
+                     coalesce(sum(expenses),0) total_expenses,
+                     coalesce(sum(sales)-sum(expenses),0) balance,
+                     sum(transactions) transaction_count,
+                     case when sum(transactions)>0 then sum(sales)/sum(transactions) else 0 end average_value
+                from financial
                group by currency order by currency
               """,
             params,
@@ -70,6 +90,8 @@ public class ReportService {
                 new ReportDtos.CurrencyMetrics(
                     rs.getString("currency"),
                     money(rs.getBigDecimal("total_sales")),
+                    money(rs.getBigDecimal("total_expenses")),
+                    money(rs.getBigDecimal("balance")),
                     rs.getLong("transaction_count"),
                     money(rs.getBigDecimal("average_value"))));
 
@@ -97,20 +119,62 @@ public class ReportService {
     List<ReportDtos.Breakdown> byEvent =
         jdbc.query(
             """
-              select e.name label,o.currency,sum(o.total_amount) total_sales,count(*) transactions
-                from orders o
-                join sales_events e on e.tenant_id=o.tenant_id and e.id=o.event_id
-               where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid))
-                 and o.order_date>=:from and o.order_date<:to
-               group by e.name,o.currency order by total_sales desc,e.name
+              with event_financial as (
+                select e.id event_id,e.name label,o.currency,o.total_amount sales,0::numeric expenses,
+                       1 transactions,0 expense_count
+                  from orders o
+                  join sales_events e on e.tenant_id=o.tenant_id and e.id=o.event_id
+                 where (:tenantId is null or o.tenant_id=cast(:tenantId as uuid))
+                   and o.order_date>=:from and o.order_date<:to
+                union all
+                select e.id,e.name label,x.currency,0::numeric,x.amount,0,1
+                  from sales_event_expenses x
+                  join sales_events e on e.tenant_id=x.tenant_id and e.id=x.event_id
+                 where (:tenantId is null or x.tenant_id=cast(:tenantId as uuid))
+                   and x.status='ACTIVE'
+                   and e.end_date>=:startDate and e.end_date<=:endDate
+              )
+              select event_id,label,currency,sum(sales) total_sales,sum(expenses) total_expenses,
+                     sum(sales)-sum(expenses) balance,sum(transactions) transactions,
+                     sum(expense_count) expense_count
+                from event_financial
+               group by event_id,label,currency
+               order by total_sales desc,total_expenses desc,label
               """,
             params,
             (rs, row) ->
                 new ReportDtos.Breakdown(
+                    rs.getObject("event_id", UUID.class),
                     rs.getString("label"),
                     rs.getString("currency"),
                     money(rs.getBigDecimal("total_sales")),
-                    rs.getLong("transactions")));
+                    money(rs.getBigDecimal("total_expenses")),
+                    money(rs.getBigDecimal("balance")),
+                    rs.getLong("transactions"),
+                    rs.getLong("expense_count")));
+
+    List<ReportDtos.ExpenseCategoryBreakdown> byCategory =
+        jdbc.query(
+            """
+              select c.id category_id,c.name label,x.currency,sum(x.amount) total_expenses,
+                     count(*) expense_count
+                from sales_event_expenses x
+                join expense_categories c on c.tenant_id=x.tenant_id and c.id=x.category_id
+                join sales_events e on e.tenant_id=x.tenant_id and e.id=x.event_id
+               where (:tenantId is null or x.tenant_id=cast(:tenantId as uuid))
+                 and x.status='ACTIVE'
+                 and e.end_date>=:startDate and e.end_date<=:endDate
+               group by c.id,c.name,x.currency
+               order by total_expenses desc,c.name
+              """,
+            params,
+            (rs, row) ->
+                new ReportDtos.ExpenseCategoryBreakdown(
+                    rs.getObject("category_id", UUID.class),
+                    rs.getString("label"),
+                    rs.getString("currency"),
+                    money(rs.getBigDecimal("total_expenses")),
+                    rs.getLong("expense_count")));
 
     return new ReportDtos.Dashboard(
         start,
@@ -120,7 +184,8 @@ public class ReportService {
         granularity.name(),
         metrics,
         trends,
-        byEvent);
+        byEvent,
+        byCategory);
   }
 
   private void validateRange(LocalDate start, LocalDate end, ReportGranularity granularity) {

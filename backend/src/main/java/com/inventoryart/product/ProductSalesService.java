@@ -32,16 +32,16 @@ public class ProductSalesService {
           List<UUID> productIds = tenantProducts.stream().map(Product::getId).distinct().toList();
           jdbc.query(
               """
-                select m.product_id,
-                       coalesce(sum(abs(m.quantity)), 0)::bigint as units_sold,
+                select l.product_id,
+                       coalesce(sum(l.quantity), 0)::bigint as units_sold,
                        max(b.attributed_date) as last_sale_date
-                  from inventory_movements m
+                  from inventory_sale_lines l
                   join inventory_sale_batches b
-                    on b.tenant_id=m.tenant_id and b.id=m.sale_batch_id
-                 where m.tenant_id=:tenantId
-                   and m.product_id in (:productIds)
-                   and m.movement_type='SALE' and m.quantity<0
-                 group by m.product_id
+                    on b.tenant_id=l.tenant_id and b.id=l.sale_batch_id
+                 where l.tenant_id=:tenantId
+                   and l.product_id in (:productIds)
+                   and b.status='ACTIVE'
+                 group by l.product_id
                 """,
               new MapSqlParameterSource()
                   .addValue("tenantId", tenantId)
