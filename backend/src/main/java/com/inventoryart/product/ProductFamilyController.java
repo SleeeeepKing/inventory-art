@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,6 +58,12 @@ public class ProductFamilyController {
   public ProductFamilyService.FamilyResponse update(
       @PathVariable UUID id, @Valid @RequestBody UpdateRequest request) {
     return service.update(id, request);
+  }
+
+  @DeleteMapping("/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void removeFromCatalogue(@PathVariable UUID id) {
+    service.removeFromCatalogue(id);
   }
 
   @PostMapping("/{id}/variants")

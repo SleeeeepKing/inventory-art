@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createPinia } from 'pinia'
 
 const mocks = vi.hoisted(() => ({
@@ -62,6 +62,7 @@ describe('ProductsView families', () => {
         size: 20,
         q: undefined,
         lowStock: undefined,
+        enabled: true,
         categories: undefined,
       },
     })
@@ -134,5 +135,64 @@ describe('ProductsView families', () => {
         },
       ],
     })
+  })
+
+  it('removes a whole artwork from the active catalogue after confirmation', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({ action: 'confirm' } as never)
+    mocks.delete.mockResolvedValue({})
+    let familyLoads = 0
+    mocks.get.mockImplementation((path: string) => {
+      if (path === '/products/categories') return Promise.resolve({ data: [] })
+      familyLoads += 1
+      return Promise.resolve({
+        data:
+          familyLoads === 1
+            ? {
+                items: [
+                  {
+                    id: 'family-1',
+                    name: 'Blue Garden',
+                    version: 0,
+                    createdAt: '2026-07-13T10:00:00Z',
+                    updatedAt: '2026-07-13T10:00:00Z',
+                    variants: [
+                      {
+                        id: 'variant-1',
+                        variantName: 'A4',
+                        sku: 'BLUE-A4',
+                        currentStock: 999,
+                        lowStockThreshold: 5,
+                        enabled: true,
+                        totalUnitsSold: 0,
+                        version: 0,
+                        createdAt: '2026-07-13T10:00:00Z',
+                        updatedAt: '2026-07-13T10:00:00Z',
+                      },
+                    ],
+                  },
+                ],
+                page: 0,
+                size: 20,
+                totalElements: 1,
+                totalPages: 1,
+              }
+            : { items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 },
+      })
+    })
+    const wrapper = mount(ProductsView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia(), i18n, ElementPlus], stubs: { EmptyState: true } },
+    })
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="Delete"]').trigger('click')
+    await flushPromises()
+
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Blue Garden'),
+      'Remove artwork?',
+      expect.objectContaining({ confirmButtonText: 'Delete' }),
+    )
+    expect(mocks.delete).toHaveBeenCalledWith('/product-families/family-1')
   })
 })

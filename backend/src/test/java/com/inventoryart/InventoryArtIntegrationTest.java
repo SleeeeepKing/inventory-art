@@ -461,6 +461,65 @@ class InventoryArtIntegrationTest {
   }
 
   @Test
+  void productFamilyRemovalDisablesEveryVariantAndRejectsOtherTenants() throws Exception {
+    Fixture owner = fixture("family-delete-owner");
+    Fixture other = fixture("family-delete-other");
+    String response =
+        mvc.perform(
+                post("/api/v1/product-families")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "name",
+                                "Archive Me",
+                                "variants",
+                                List.of(
+                                    Map.of("variantName", "A5", "sku", "ARCHIVE-A5"),
+                                    Map.of("variantName", "A4", "sku", "ARCHIVE-A4"))))))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID familyId = UUID.fromString(json.readTree(response).get("id").asText());
+
+    mvc.perform(delete("/api/v1/product-families/{id}", familyId).with(userJwt(other)))
+        .andExpect(status().isNotFound());
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from products where tenant_id=? and family_id=? and enabled",
+                Integer.class,
+                owner.tenant().getId(),
+                familyId))
+        .isEqualTo(2);
+
+    mvc.perform(delete("/api/v1/product-families/{id}", familyId).with(userJwt(owner)))
+        .andExpect(status().isNoContent());
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from products where tenant_id=? and family_id=? and enabled",
+                Integer.class,
+                owner.tenant().getId(),
+                familyId))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from product_families where tenant_id=? and id=?",
+                Integer.class,
+                owner.tenant().getId(),
+                familyId))
+        .isOne();
+    mvc.perform(
+            get("/api/v1/product-families")
+                .with(userJwt(owner))
+                .param("enabled", "true")
+                .param("q", "Archive Me"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(0));
+  }
+
+  @Test
   void productFamilyImageUploadsOnceAndIsTenantScoped() throws Exception {
     Fixture owner = fixture("family-image-owner");
     Fixture other = fixture("family-image-other");

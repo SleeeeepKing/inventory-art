@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
-    "pwa:assets": "pwa-assets-generator --preset minimal-2023 --root public --html=false --manifest=false pwa-icon.svg && node scripts/generate-maskable-icon.mjs",
+    "pwa:assets": "pwa-assets-generator --preset minimal-2023 --root public --html=false --manifest=false logo.png",
     "pwa:check": "node scripts/check-pwa-build.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json --pretty false",
     "lint": "eslint .",

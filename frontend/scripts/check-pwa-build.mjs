@@ -7,6 +7,7 @@ const requiredFiles = [
   'sw.js',
   'manifest.webmanifest',
   'index.html',
+  'logo.png',
   'favicon.ico',
   'apple-touch-icon-180x180.png',
   'pwa-192x192.png',
@@ -61,6 +62,9 @@ for (const marker of ['/api/', '/actuator/', 'SKIP_WAITING', 'index.html']) {
 }
 if (/"url":"(?:https?:|\/?api\/|\/?actuator\/)/.test(worker)) {
   throw new Error('Service worker precache contains a network-only URL')
+}
+if (worker.includes('"url":"logo.png"')) {
+  throw new Error('Service worker must not precache the full-resolution logo source')
 }
 
 const headers = await readFile(resolve(dist, '_headers'), 'utf8')

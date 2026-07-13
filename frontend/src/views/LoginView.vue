@@ -39,8 +39,7 @@ async function submit() {
   <main class="login-page">
     <section class="login-story">
       <div class="login-brand">
-        <span class="brand-mark"
-          ><span /><b>{{ t('app.shortName') }}</b></span
+        <span class="brand-mark"><img src="/pwa-192x192.png" alt="" /></span
         ><strong>{{ t('app.name') }}</strong>
       </div>
       <div class="login-story__message">
@@ -53,6 +52,10 @@ async function submit() {
     </section>
     <section class="login-panel">
       <div class="login-form-wrap">
+        <div class="login-panel-brand">
+          <span class="brand-mark"><img src="/pwa-192x192.png" alt="" /></span>
+          <strong>{{ t('app.name') }}</strong>
+        </div>
         <div class="login-languages" :aria-label="t('profile.language')">
           <button
             v-for="language in languages"

@@ -141,17 +141,10 @@ a {
   color: var(--ink-950);
   font: 800 13px var(--utility);
 }
-.brand-mark > span {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 11px;
-  height: 11px;
-  background: var(--coral);
-}
-.brand-mark b {
-  position: relative;
-  letter-spacing: -0.05em;
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .brand-copy {
   display: flex;
@@ -1168,6 +1161,14 @@ body.nav-open {
 .login-form-wrap {
   width: min(430px, 100%);
 }
+.login-panel-brand {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  font-family: var(--display);
+  font-size: 17px;
+}
 .login-languages {
   display: flex;
   justify-content: flex-end;
@@ -2116,6 +2117,9 @@ body.nav-open {
   }
   .login-panel {
     min-height: 100vh;
+  }
+  .login-panel-brand {
+    display: flex;
   }
   .order-item-row {
     grid-template-columns: 1fr 100px 44px;

@@ -88,7 +88,7 @@ async function signOut() {
     <aside id="primary-navigation" class="side-nav" :class="{ 'is-mobile-open': mobileOpen }">
       <div class="brand-lockup">
         <div class="brand-mark">
-          <span /><b>{{ t('app.shortName') }}</b>
+          <img src="/pwa-192x192.png" alt="" />
         </div>
         <div class="brand-copy">
           <strong>{{ t('app.name') }}</strong

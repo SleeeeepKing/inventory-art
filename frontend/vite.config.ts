@@ -12,7 +12,7 @@ export default defineConfig({
       filename: 'sw.ts',
       registerType: 'prompt',
       injectRegister: null,
-      includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-icon.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         id: '/',
         name: 'Inventory Art',
@@ -47,6 +47,7 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}'],
+        globIgnores: ['logo.png'],
       },
       devOptions: { enabled: false },
     }),

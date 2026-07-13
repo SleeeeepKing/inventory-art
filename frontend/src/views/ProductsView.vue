@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, type UploadFile } from 'element-plus'
+import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { api, resolveApiUrl } from '@/services/api'
 import { createImagePreview, sha256 } from '@/services/imagePreview'
@@ -29,6 +29,7 @@ const { showError } = useApiFeedback()
 const { number, date } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
+const deletingId = ref('')
 const dialogOpen = ref(false)
 const search = ref('')
 const lowStockFilter = ref<'ALL' | 'LOW' | 'ENOUGH'>('ALL')
@@ -79,6 +80,7 @@ async function load() {
       size: pageSize.value,
       q: search.value.trim() || undefined,
       lowStock: lowStockFilter.value === 'ALL' ? undefined : lowStockFilter.value === 'LOW',
+      enabled: true,
       categories: selectedCategories.value.length ? selectedCategories.value : undefined,
     }
     const { data } = await api.get<PageResponse<ProductFamily>>('/product-families', { params })
@@ -268,6 +270,29 @@ async function save() {
   }
 }
 
+async function remove(family: ProductFamily) {
+  try {
+    await ElMessageBox.confirm(
+      t('products.deleteBody', { name: family.name }),
+      t('products.deleteTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.delete'),
+        cancelButtonText: t('common.cancel'),
+      },
+    )
+    deletingId.value = family.id
+    await api.delete(`/product-families/${family.id}`)
+    ElMessage.success(t('products.deleted'))
+    if (page.value.items.length === 1 && currentPage.value > 1) currentPage.value -= 1
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') showError(error)
+  } finally {
+    deletingId.value = ''
+  }
+}
+
 onMounted(() => {
   void load()
   void loadCategories()
@@ -383,13 +408,21 @@ onMounted(() => {
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('common.actions')" width="76" fixed="right">
+        <ElTableColumn :label="t('common.actions')" width="112" fixed="right">
           <template #default="scope">
             <ElButton
               text
               :icon="Edit"
               :aria-label="t('common.edit')"
               @click="openEdit(scope.row)"
+            />
+            <ElButton
+              text
+              type="danger"
+              :icon="Delete"
+              :loading="deletingId === scope.row.id"
+              :aria-label="t('common.delete')"
+              @click="remove(scope.row)"
             />
           </template>
         </ElTableColumn>

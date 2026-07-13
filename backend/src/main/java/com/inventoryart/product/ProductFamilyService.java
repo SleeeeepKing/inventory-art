@@ -142,6 +142,23 @@ public class ProductFamilyService {
     return response(family, all, sales.summarize(all));
   }
 
+  @Transactional
+  public void removeFromCatalogue(UUID id) {
+    ProductFamily family = required(id);
+    List<Product> variants = products.findAllByTenantIdAndFamilyId(current.tenantId(), id);
+    for (Product variant : variants) {
+      variant.updateVariant(
+          variant.getSku(), variant.getVariantName(), variant.getLowStockThreshold(), false);
+    }
+    audit.record(
+        current.tenantId(),
+        "PRODUCT_FAMILY_DISABLE",
+        "PRODUCT_FAMILY",
+        id,
+        "SUCCESS",
+        Map.of("name", family.getName(), "variantCount", variants.size()));
+  }
+
   private List<Product> createVariants(
       ProductFamily family, List<ProductFamilyController.VariantCreateRequest> requests) {
     List<Product> created = new ArrayList<>();
