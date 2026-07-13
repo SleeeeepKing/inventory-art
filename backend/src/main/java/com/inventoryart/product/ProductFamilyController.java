@@ -34,9 +34,12 @@ public class ProductFamilyController {
   @GetMapping
   public PageResponse<ProductFamilyService.FamilyResponse> list(
       @RequestParam(required = false) String q,
+      @RequestParam(required = false) Boolean enabled,
+      @RequestParam(required = false) Boolean lowStock,
+      @RequestParam(required = false) @Size(max = 100) List<@Size(max = 160) String> categories,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    return service.list(q, page, size);
+    return service.list(q, enabled, lowStock, categories, page, size);
   }
 
   @GetMapping("/{id}")

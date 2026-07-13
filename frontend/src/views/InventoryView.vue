@@ -234,8 +234,6 @@ function mergeSaleProducts(record: InventorySale) {
       id: item.productId,
       sku: item.productSku,
       name: item.productName,
-      salePrice: 0,
-      currency: '',
       currentStock: item.currentStock,
       enabled: false,
       imageUrl: item.productImageUrl,
@@ -463,16 +461,6 @@ onMounted(load)
         :data="page.items"
         row-key="id"
       >
-        <ElTableColumn type="expand" width="48">
-          <template #default="scope">
-            <div v-if="scope.row.kind === 'SALE'" class="sale-operation-items">
-              <div v-for="item in scope.row.items" :key="item.productId">
-                <span>{{ item.productName }} · {{ item.productSku }}</span>
-                <strong>−{{ number(item.quantity) }}</strong>
-              </div>
-            </div>
-          </template>
-        </ElTableColumn>
         <ElTableColumn :label="t('inventory.product')" min-width="260"
           ><template #default="scope"
             ><div class="inventory-product-cell">
@@ -484,6 +472,24 @@ onMounted(load)
               <div class="cell-stack">
                 <strong>{{ movementProductName(scope.row) }}</strong
                 ><code class="sku-code">{{ movementProductSku(scope.row) }}</code>
+                <ElPopover
+                  v-if="scope.row.kind === 'SALE' && scope.row.items.length > 1"
+                  placement="bottom-start"
+                  :width="320"
+                  trigger="click"
+                >
+                  <template #reference>
+                    <ElButton class="sale-items-trigger" text type="primary">{{
+                      t('inventory.viewSaleItems', { count: scope.row.items.length })
+                    }}</ElButton>
+                  </template>
+                  <div class="sale-operation-items">
+                    <div v-for="item in scope.row.items" :key="item.productId">
+                      <span>{{ item.productName }} · {{ item.productSku }}</span>
+                      <strong>−{{ number(item.quantity) }}</strong>
+                    </div>
+                  </div>
+                </ElPopover>
               </div>
             </div></template
           ></ElTableColumn

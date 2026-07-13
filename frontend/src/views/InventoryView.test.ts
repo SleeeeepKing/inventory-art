@@ -93,6 +93,65 @@ describe('InventoryView product identity', () => {
     expect(product.get('img').attributes('src')).toBe('blob:secure-preview')
     expect(product.text()).toContain('Blue Horizon')
     expect(product.text()).toContain('ART-001')
+    expect(wrapper.find('.el-table__expand-icon').exists()).toBe(false)
+  })
+
+  it('shows a named details action only for multi-product sales', async () => {
+    mocks.get.mockImplementation((url: string) => {
+      if (url === '/inventory/operations') {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                id: 'sale-multi',
+                kind: 'SALE',
+                type: 'SALE',
+                quantity: -3,
+                createdAt: '2026-07-13T10:00:00Z',
+                updatedAt: '2026-07-13T10:00:00Z',
+                version: 0,
+                items: [
+                  {
+                    productId: 'product-1',
+                    productName: 'Blue Horizon · A4',
+                    productSku: 'ART-A4',
+                    currentStock: 2,
+                    quantity: 1,
+                  },
+                  {
+                    productId: 'product-2',
+                    productName: 'Blue Horizon · A3',
+                    productSku: 'ART-A3',
+                    currentStock: 1,
+                    quantity: 2,
+                  },
+                ],
+              },
+            ],
+            page: 0,
+            size: 20,
+            totalElements: 1,
+            totalPages: 1,
+          },
+        })
+      }
+      if (url === '/products') {
+        return Promise.resolve({
+          data: { items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 },
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    const wrapper = mount(InventoryView, {
+      global: {
+        plugins: [createPinia(), i18n, ElementPlus],
+        stubs: { PageHeader: true, EmptyState: true },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.sale-items-trigger').text()).toBe('View 2 products')
+    expect(wrapper.find('.el-table__expand-icon').exists()).toBe(false)
   })
 
   it('uses the same image-aware selector for stock-in, correction, and sold quantities', () => {

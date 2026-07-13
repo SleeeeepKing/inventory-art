@@ -261,10 +261,10 @@ public class InventoryOperationService {
     return new ItemResponse(
         lineId,
         product.getId(),
-        product.getName(),
+        product.getDisplayName(),
         product.getSku(),
         product.getCategory(),
-        files.productImageUrl(product.getId(), product.getImageObjectKey()),
+        files.catalogImageUrl(product.getId(), product.getFamilyId(), product.getImageObjectKey()),
         product.getCurrentStock(),
         quantity);
   }

@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 @Validated
 public class ProductController {
   private final ProductRepository products;
+  private final ProductFamilyRepository families;
   private final InventoryService inventory;
   private final CurrentUserService current;
   private final AuditService audit;
@@ -35,12 +37,14 @@ public class ProductController {
 
   public ProductController(
       ProductRepository products,
+      ProductFamilyRepository families,
       InventoryService inventory,
       CurrentUserService current,
       AuditService audit,
       FileService files,
       ProductSalesService sales) {
     this.products = products;
+    this.families = families;
     this.inventory = inventory;
     this.current = current;
     this.audit = audit;
@@ -67,20 +71,23 @@ public class ProductController {
             categoryFilter.isEmpty() ? List.of("") : categoryFilter,
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt")));
     var summaries = sales.summarize(productsPage.getContent());
+    Map<UUID, ProductFamily> familyMap = familyMap(productsPage.getContent());
     return PageResponse.of(
         productsPage.map(
             product ->
                 response(
                     product,
+                    product.getFamilyId() == null ? null : familyMap.get(product.getFamilyId()),
                     summaries.getOrDefault(product.getId(), ProductSalesService.Summary.EMPTY))));
   }
 
   @GetMapping("/{id}")
   public Response get(@PathVariable UUID id) {
-    return response(
+    Product product =
         products
             .findByIdAndTenantId(id, current.tenantId())
-            .orElseThrow(() -> new NotFoundException("Product")));
+            .orElseThrow(() -> new NotFoundException("Product"));
+    return response(product, family(product));
   }
 
   @GetMapping("/categories")
@@ -93,27 +100,49 @@ public class ProductController {
   @Transactional
   public Response create(@Valid @RequestBody Request req) {
     UUID tenant = current.tenantId();
+    if (req.name() == null || req.name().isBlank()) {
+      throw new BusinessException("VALIDATION_ERROR", "Product name is required");
+    }
     if (products.existsByTenantIdAndSkuIgnoreCase(tenant, req.sku()))
       throw new BusinessException("DUPLICATE_SKU", "SKU already exists");
+    ProductFamily family =
+        families.save(
+            new ProductFamily(
+                UUID.randomUUID(),
+                tenant,
+                req.name(),
+                req.category(),
+                req.artistName(),
+                req.description()));
+    int threshold =
+        req.lowStockThreshold() == null
+            ? ProductFamilyService.DEFAULT_LOW_STOCK_THRESHOLD
+            : req.lowStockThreshold();
     Product p =
         products.save(
             new Product(
                 UUID.randomUUID(),
                 tenant,
+                family.getId(),
+                req.variantName(),
                 req.sku(),
                 req.name(),
                 req.category(),
                 req.artistName(),
                 req.description(),
                 req.costPrice(),
-                req.salePrice(),
-                req.currency(),
-                req.lowStockThreshold()));
-    if (req.initialStock() > 0)
+                req.salePrice() == null ? BigDecimal.ZERO : req.salePrice(),
+                req.currency() == null ? "EUR" : req.currency(),
+                threshold));
+    int initialStock =
+        req.initialStock() == null
+            ? ProductFamilyService.DEFAULT_INITIAL_STOCK
+            : req.initialStock();
+    if (initialStock > 0)
       inventory.apply(
           tenant,
           p.getId(),
-          req.initialStock(),
+          initialStock,
           MovementType.INITIAL,
           "Initial stock",
           null,
@@ -142,17 +171,31 @@ public class ProductController {
             other -> {
               throw new BusinessException("DUPLICATE_SKU", "SKU already exists");
             });
-    p.update(
-        req.sku(),
-        req.name(),
-        req.category(),
-        req.artistName(),
-        req.description(),
-        req.costPrice(),
-        req.salePrice(),
-        req.currency(),
-        req.lowStockThreshold(),
-        req.enabled());
+    if (req.version() != null && req.version() != p.getVersion()) {
+      throw new BusinessException(
+          "VERSION_CONFLICT",
+          "Product was changed by another request",
+          org.springframework.http.HttpStatus.CONFLICT);
+    }
+    int threshold =
+        req.lowStockThreshold() == null ? p.getLowStockThreshold() : req.lowStockThreshold();
+    boolean enabled = req.enabled() == null ? p.isEnabled() : req.enabled();
+    ProductFamily family = family(p);
+    if (req.name() != null && !req.name().isBlank()) {
+      family.update(req.name(), req.category(), req.artistName(), req.description());
+      p.update(
+          req.sku(),
+          family.getName(),
+          family.getCategory(),
+          family.getArtistName(),
+          family.getDescription(),
+          req.costPrice() == null ? p.getCostPrice() : req.costPrice(),
+          req.salePrice() == null ? p.getSalePrice() : req.salePrice(),
+          req.currency() == null ? p.getCurrency() : req.currency(),
+          threshold,
+          enabled);
+    }
+    p.updateVariant(req.sku(), req.variantName(), threshold, enabled);
     audit.record(
         current.tenantId(),
         "PRODUCT_UPDATE",
@@ -160,7 +203,7 @@ public class ProductController {
         id,
         "SUCCESS",
         java.util.Map.of("sku", p.getSku()));
-    return response(p);
+    return response(p, family);
   }
 
   @DeleteMapping("/{id}")
@@ -201,32 +244,64 @@ public class ProductController {
   }
 
   private Response response(Product p) {
+    return response(p, family(p));
+  }
+
+  private Response response(Product p, ProductFamily family) {
     return response(
         p,
+        family,
         sales
             .summarize(java.util.List.of(p))
             .getOrDefault(p.getId(), ProductSalesService.Summary.EMPTY));
   }
 
-  private Response response(Product p, ProductSalesService.Summary summary) {
-    return Response.from(p, files.productImageUrl(p.getId(), p.getImageObjectKey()), summary);
+  private Response response(Product p, ProductFamily family, ProductSalesService.Summary summary) {
+    String imageUrl =
+        family == null
+            ? files.productImageUrl(p.getId(), p.getImageObjectKey())
+            : files.productFamilyImageUrl(family.getId(), family.getImageObjectKey());
+    return Response.from(p, family, imageUrl, summary);
+  }
+
+  private ProductFamily family(Product product) {
+    if (product.getFamilyId() == null) return null;
+    return families
+        .findByIdAndTenantId(product.getFamilyId(), current.tenantId())
+        .orElseThrow(() -> new NotFoundException("Product family"));
+  }
+
+  private Map<UUID, ProductFamily> familyMap(List<Product> productList) {
+    List<UUID> ids =
+        productList.stream()
+            .map(Product::getFamilyId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+    if (ids.isEmpty()) return Map.of();
+    return families.findAllByTenantIdAndIdIn(current.tenantId(), ids).stream()
+        .collect(java.util.stream.Collectors.toMap(ProductFamily::getId, family -> family));
   }
 
   public record Request(
       @NotBlank @Size(max = 100) String sku,
-      @NotBlank @Size(max = 240) String name,
+      @Size(max = 160) String variantName,
+      @Size(max = 240) String name,
       @Size(max = 160) String category,
       @Size(max = 160) String artistName,
       @Size(max = 5000) String description,
       @DecimalMin("0.0") BigDecimal costPrice,
-      @NotNull @DecimalMin("0.0") BigDecimal salePrice,
-      @NotBlank @Pattern(regexp = "[A-Za-z]{3}") String currency,
-      @Min(0) int lowStockThreshold,
-      @Min(0) int initialStock,
-      boolean enabled) {}
+      @DecimalMin("0.0") BigDecimal salePrice,
+      @Pattern(regexp = "[A-Za-z]{3}") String currency,
+      @Min(0) Integer lowStockThreshold,
+      @Min(0) Integer initialStock,
+      Boolean enabled,
+      @Min(0) Long version) {}
 
   public record Response(
       UUID id,
+      UUID familyId,
+      String variantName,
       String sku,
       String name,
       String category,
@@ -245,21 +320,24 @@ public class ProductController {
       Instant createdAt,
       Instant updatedAt) {
     public static Response from(Product p) {
-      return from(p, null, ProductSalesService.Summary.EMPTY);
+      return from(p, null, null, ProductSalesService.Summary.EMPTY);
     }
 
     public static Response from(Product p, String imageUrl) {
-      return from(p, imageUrl, ProductSalesService.Summary.EMPTY);
+      return from(p, null, imageUrl, ProductSalesService.Summary.EMPTY);
     }
 
-    public static Response from(Product p, String imageUrl, ProductSalesService.Summary summary) {
+    public static Response from(
+        Product p, ProductFamily family, String imageUrl, ProductSalesService.Summary summary) {
       return new Response(
           p.getId(),
+          p.getFamilyId(),
+          p.getVariantName(),
           p.getSku(),
-          p.getName(),
-          p.getCategory(),
-          p.getArtistName(),
-          p.getDescription(),
+          family == null ? p.getName() : family.getName(),
+          family == null ? p.getCategory() : family.getCategory(),
+          family == null ? p.getArtistName() : family.getArtistName(),
+          family == null ? p.getDescription() : family.getDescription(),
           imageUrl,
           p.getCostPrice(),
           p.getSalePrice(),

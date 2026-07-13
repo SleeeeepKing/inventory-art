@@ -58,12 +58,18 @@ public class ProductFamilyService {
   }
 
   @Transactional(readOnly = true)
-  public PageResponse<FamilyResponse> list(String q, int page, int size) {
+  public PageResponse<FamilyResponse> list(
+      String q, Boolean enabled, Boolean lowStock, List<String> categories, int page, int size) {
     UUID tenantId = current.tenantId();
+    List<String> categoryFilter = normalizeCategories(categories);
     var result =
         families.search(
             tenantId,
             q == null || q.isBlank() ? "" : q.trim(),
+            enabled,
+            lowStock,
+            categoryFilter.isEmpty(),
+            categoryFilter.isEmpty() ? List.of("") : categoryFilter,
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt")));
     List<UUID> familyIds = result.getContent().stream().map(ProductFamily::getId).toList();
     Map<UUID, List<Product>> variants = variantsByFamily(tenantId, familyIds);
@@ -227,6 +233,15 @@ public class ProductFamilyService {
     return families
         .findByIdAndTenantId(id, current.tenantId())
         .orElseThrow(() -> new NotFoundException("Product family"));
+  }
+
+  private List<String> normalizeCategories(List<String> categories) {
+    if (categories == null) return List.of();
+    return categories.stream()
+        .filter(value -> value != null && !value.isBlank())
+        .map(value -> value.trim().toLowerCase(Locale.ROOT))
+        .distinct()
+        .toList();
   }
 
   private Map<UUID, List<Product>> variantsByFamily(UUID tenantId, List<UUID> familyIds) {

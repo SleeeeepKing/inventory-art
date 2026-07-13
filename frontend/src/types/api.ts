@@ -48,12 +48,14 @@ export interface PageResponse<T> {
 
 export interface Product {
   id: string
+  familyId?: string
+  variantName?: string
   sku: string
   name: string
   description?: string
-  salePrice: number
+  salePrice?: number
   costPrice?: number
-  currency: string
+  currency?: string
   currentStock: number
   lowStockThreshold?: number
   enabled: boolean
@@ -65,6 +67,33 @@ export interface Product {
   version?: number
   createdAt?: string
   updatedAt?: string
+}
+
+export interface ProductVariant {
+  id: string
+  variantName?: string
+  sku: string
+  currentStock: number
+  lowStockThreshold: number
+  enabled: boolean
+  totalUnitsSold: number
+  lastSaleDate?: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProductFamily {
+  id: string
+  name: string
+  category?: string
+  artistName?: string
+  description?: string
+  imageUrl?: string
+  version: number
+  createdAt: string
+  updatedAt: string
+  variants: ProductVariant[]
 }
 
 export interface InventoryMovement {

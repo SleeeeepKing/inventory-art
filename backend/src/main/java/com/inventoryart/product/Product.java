@@ -147,6 +147,10 @@ public class Product {
     return name;
   }
 
+  public String getDisplayName() {
+    return variantName == null || variantName.isBlank() ? name : name + " · " + variantName;
+  }
+
   public String getCategory() {
     return category;
   }

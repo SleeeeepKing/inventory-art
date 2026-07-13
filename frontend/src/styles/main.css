@@ -718,6 +718,131 @@ body.nav-open {
 .inventory-product-cell .cell-stack {
   flex: 1;
 }
+.variant-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.variant-ticket {
+  display: grid;
+  min-width: 88px;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--ink-150);
+  border-left: 3px solid var(--coral);
+  border-radius: 7px;
+  background: var(--paper);
+}
+.variant-ticket[data-active='false'] {
+  border-left-color: var(--ink-300);
+  opacity: 0.58;
+}
+.variant-ticket strong {
+  color: var(--ink-800);
+  font-size: 12px;
+}
+.variant-ticket code {
+  grid-column: 1;
+  color: var(--ink-500);
+  font-size: 10px;
+}
+.variant-ticket small {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--coral-dark);
+  font: 800 13px var(--utility);
+}
+.family-editor {
+  display: grid;
+  gap: 24px;
+}
+.family-dialog {
+  display: flex;
+  max-height: calc(100dvh - 40px);
+  flex-direction: column;
+  margin-top: 20px;
+}
+.family-dialog .el-dialog__body {
+  min-height: 0;
+  overflow-y: auto;
+}
+.family-dialog .el-dialog__footer {
+  flex: none;
+}
+.family-editor__common,
+.family-editor__variants {
+  display: grid;
+  gap: 16px;
+}
+.family-editor__variants {
+  padding-top: 20px;
+  border-top: 1px solid var(--ink-150);
+}
+.editor-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.editor-section-heading span {
+  color: var(--coral-dark);
+  font: 800 10px var(--utility);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.editor-section-heading h3 {
+  margin: 3px 0 0;
+  color: var(--ink-900);
+  font-family: var(--display);
+  font-size: 20px;
+}
+.editor-section-heading small {
+  max-width: 330px;
+  color: var(--ink-500);
+  font-size: 11px;
+  text-align: right;
+}
+.variant-editor-list {
+  display: grid;
+  gap: 10px;
+}
+.variant-editor-row {
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    34px minmax(120px, 1fr) minmax(150px, 1.2fr) minmax(112px, 0.7fr) minmax(112px, 0.7fr)
+    auto;
+  align-items: end;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--ink-150);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 75%, white);
+}
+.variant-editor-row__index {
+  align-self: center;
+  color: var(--coral-dark);
+  font: 800 11px var(--utility);
+}
+.variant-editor-row .el-form-item {
+  margin-bottom: 0;
+}
+.variant-editor-row .el-input-number {
+  width: 100%;
+}
+.variant-editor-row__remove {
+  min-width: 40px;
+  min-height: 40px;
+  align-self: end;
+}
+.sale-items-trigger {
+  align-self: flex-start;
+  min-height: 28px;
+  padding-inline: 0;
+  font-size: 11px;
+}
 .stock-low {
   color: var(--coral-dark);
 }
@@ -1477,8 +1602,8 @@ body.nav-open {
   width: 100%;
 }
 .report-filters {
-  display: grid;
-  grid-template-columns: minmax(470px, 1fr) minmax(170px, auto) 118px auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 18px;
   padding: 18px 20px;
@@ -1486,7 +1611,8 @@ body.nav-open {
 .report-period {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(250px, 0.8fr) minmax(310px, 1fr);
+  flex: 2 1 520px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(270px, 1.1fr);
   gap: 10px 14px;
 }
 .report-filter__label {
@@ -1535,7 +1661,7 @@ body.nav-open {
   gap: 5px;
 }
 .report-presets button {
-  min-height: 32px;
+  min-height: 44px;
   padding: 5px 9px;
   border: 1px solid var(--ink-150);
   border-radius: 8px;
@@ -1543,7 +1669,9 @@ body.nav-open {
   color: var(--ink-700);
   cursor: pointer;
   font: 700 10px var(--utility);
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .report-presets button:hover,
 .report-presets button.active {
@@ -1557,17 +1685,21 @@ body.nav-open {
 .report-filter-field {
   display: flex;
   min-width: 0;
+  flex: 1 1 180px;
   flex-direction: column;
   gap: 8px;
 }
 .report-filter-field .el-radio-group {
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .report-filter-field .el-radio-button {
   flex: 1;
 }
 .report-filter-field .el-radio-button__inner {
   width: 100%;
+  min-height: 44px;
+  white-space: normal;
 }
 .report-filter-field small {
   max-width: 180px;
@@ -1575,7 +1707,16 @@ body.nav-open {
 }
 .report-filter-actions {
   display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-inline-start: auto;
+}
+.report-filter-actions .el-button {
+  min-height: 44px;
+}
+.report-currency {
+  flex: 0 1 130px;
 }
 .report-filter-actions .el-button + .el-button {
   margin-left: 0;
@@ -1873,10 +2014,10 @@ body.nav-open {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .report-filters {
-    grid-template-columns: minmax(0, 1fr) 130px auto;
+    gap: 14px;
   }
   .report-period {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
   }
 }
 
@@ -2161,7 +2302,13 @@ body.nav-open {
     padding: 15px 13px;
   }
   .report-period {
+    flex: none;
     grid-template-columns: 1fr;
+  }
+  .report-filter-field,
+  .report-currency {
+    width: 100%;
+    flex: none;
   }
   .report-filter__label,
   .report-period__rail,
@@ -2177,9 +2324,24 @@ body.nav-open {
   .report-filter-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-inline-start: 0;
   }
   .report-filter-actions .el-button {
     width: 100%;
+  }
+  .variant-editor-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .variant-editor-row .el-form-item,
+  .variant-editor-row__remove {
+    grid-column: 2;
+  }
+  .editor-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .editor-section-heading small {
+    text-align: left;
   }
   .data-panel .el-table .el-scrollbar__wrap {
     overflow-x: auto;

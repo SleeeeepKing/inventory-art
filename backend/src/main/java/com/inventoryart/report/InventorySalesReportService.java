@@ -23,6 +23,7 @@ public class InventorySalesReportService {
         from inventory_sale_lines l
         join inventory_sale_batches b on b.tenant_id=l.tenant_id and b.id=l.sale_batch_id
         join products p on p.tenant_id=l.tenant_id and p.id=l.product_id
+        left join product_families f on f.tenant_id=p.tenant_id and f.id=p.family_id
         join sales_events e on e.tenant_id=b.tenant_id and e.id=b.event_id
         where (:tenantId is null or l.tenant_id=cast(:tenantId as uuid))
           and b.attributed_date>=:start and b.attributed_date<=:end
@@ -74,16 +75,25 @@ public class InventorySalesReportService {
         summary == null ? new ReportDtos.InventorySalesMetrics(0, 0) : summary,
         groups(
             "p.id",
+            "p.family_id",
             "p.sku",
-            "p.name",
-            "p.image_object_key",
-            "p.id,p.sku,p.name,p.image_object_key",
+            "case when p.variant_name is null or p.variant_name='' then coalesce(f.name,p.name) else coalesce(f.name,p.name) || ' · ' || p.variant_name end",
+            "coalesce(f.image_object_key,p.image_object_key)",
+            "p.id,p.family_id,p.sku,p.variant_name,f.name,f.image_object_key,p.name,p.image_object_key",
             params),
-        groups("null::uuid", "null::varchar", "e.name", "null::varchar", "e.name", params));
+        groups(
+            "null::uuid",
+            "null::uuid",
+            "null::varchar",
+            "e.name",
+            "null::varchar",
+            "e.name",
+            params));
   }
 
   private List<ReportDtos.InventorySalesGroup> groups(
       String productId,
+      String productFamilyId,
       String sku,
       String label,
       String imageObjectKey,
@@ -91,10 +101,10 @@ public class InventorySalesReportService {
       MapSqlParameterSource params) {
     return jdbc.query(
         """
-            select %s product_id,%s sku,%s label,%s image_object_key,
+            select %s product_id,%s family_id,%s sku,%s label,%s image_object_key,
                    sum(l.quantity) units,count(distinct b.id) batches
             """
-                .formatted(productId, sku, label, imageObjectKey)
+                .formatted(productId, productFamilyId, sku, label, imageObjectKey)
             + BASE
             + " group by "
             + groupBy
@@ -102,11 +112,14 @@ public class InventorySalesReportService {
         params,
         (rs, row) -> {
           UUID id = rs.getObject("product_id", UUID.class);
+          UUID familyId = rs.getObject("family_id", UUID.class);
           return new ReportDtos.InventorySalesGroup(
               id,
               rs.getString("sku"),
               rs.getString("label"),
-              id == null ? null : files.productImageUrl(id, rs.getString("image_object_key")),
+              id == null
+                  ? null
+                  : files.catalogImageUrl(id, familyId, rs.getString("image_object_key")),
               rs.getLong("units"),
               rs.getLong("batches"));
         });

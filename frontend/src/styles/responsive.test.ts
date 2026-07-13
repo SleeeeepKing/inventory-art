@@ -13,6 +13,8 @@ describe('mobile-primary layout contract', () => {
 
   it('keeps dialogs, actions, and data tables inside a phone viewport', () => {
     expect(mobileRules).toContain('max-height: calc(100dvh - 20px)')
+    expect(css).toMatch(/\.family-dialog\s*\{[^}]*max-height:\s*calc\(100dvh - 40px\)/s)
+    expect(css).toMatch(/\.family-dialog \.el-dialog__body\s*\{[^}]*overflow-y:\s*auto/s)
     expect(mobileRules).toMatch(/\.el-dialog__footer[^}]*flex-direction:\s*column/s)
     expect(mobileRules).toContain('overflow-x: auto')
   })
@@ -27,6 +29,11 @@ describe('mobile-primary layout contract', () => {
   })
 
   it('stacks report filters and quick actions without scaling translated labels', () => {
+    expect(css).toMatch(/\.report-filters\s*\{[^}]*flex-wrap:\s*wrap/s)
+    expect(css).toMatch(/\.report-presets button\s*\{[^}]*white-space:\s*normal/s)
+    expect(css).toMatch(
+      /\.report-filter-field \.el-radio-button__inner\s*\{[^}]*min-height:\s*44px[^}]*white-space:\s*normal/s,
+    )
     expect(mobileRules).toMatch(/\.report-filters\s*\{[^}]*flex-direction:\s*column/s)
     expect(mobileRules).toMatch(/\.quick-actions__list\s*\{[^}]*grid-template-columns:\s*1fr/s)
     expect(css).toMatch(/\.quick-action\s*\{[^}]*font-size:\s*13px/s)

@@ -215,6 +215,13 @@ public class FileService {
   }
 
   @Transactional(readOnly = true)
+  public String catalogImageUrl(UUID productId, UUID productFamilyId, String objectKey) {
+    return productFamilyId == null
+        ? productImageUrl(productId, objectKey)
+        : productFamilyImageUrl(productFamilyId, objectKey);
+  }
+
+  @Transactional(readOnly = true)
   public PreviewContent preview(UUID fileId) throws IOException {
     StoredFile file = required(fileId);
     if (file.getStatus() != StoredFile.Status.CONFIRMED) {

@@ -329,9 +329,10 @@ public class InventoryController {
                 Product::getId,
                 product ->
                     new ProductDisplay(
-                        product.getName(),
+                        product.getDisplayName(),
                         product.getSku(),
-                        files.productImageUrl(product.getId(), product.getImageObjectKey()))));
+                        files.catalogImageUrl(
+                            product.getId(), product.getFamilyId(), product.getImageObjectKey()))));
   }
 
   private static String blankToNull(String value) {
@@ -356,11 +357,12 @@ public class InventoryController {
                   return new InventorySaleDtos.SaleItemResponse(
                       line.getId(),
                       line.getProductId(),
-                      product == null ? null : product.getName(),
+                      product == null ? null : product.getDisplayName(),
                       product == null ? null : product.getSku(),
                       product == null
                           ? null
-                          : files.productImageUrl(product.getId(), product.getImageObjectKey()),
+                          : files.catalogImageUrl(
+                              product.getId(), product.getFamilyId(), product.getImageObjectKey()),
                       product == null ? 0 : product.getCurrentStock(),
                       line.getQuantity());
                 })

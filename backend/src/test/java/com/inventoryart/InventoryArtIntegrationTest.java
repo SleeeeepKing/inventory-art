@@ -382,6 +382,21 @@ class InventoryArtIntegrationTest {
                 Integer.class,
                 owner.tenant().getId()))
         .isEqualTo(1);
+    mvc.perform(
+            get("/api/v1/product-families")
+                .with(userJwt(owner))
+                .param("lowStock", "true")
+                .param("categories", "print"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.items[0].id").value(familyId.toString()));
+    mvc.perform(
+            get("/api/v1/product-families")
+                .with(userJwt(other))
+                .param("lowStock", "true")
+                .param("categories", "print"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(0));
     mvc.perform(get("/api/v1/product-families/{id}", familyId).with(userJwt(other)))
         .andExpect(status().isNotFound());
 

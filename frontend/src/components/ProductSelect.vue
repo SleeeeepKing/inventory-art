@@ -44,7 +44,7 @@ function productFor(id: string) {
     <ElOption
       v-for="product in products"
       :key="product.id"
-      :label="`${product.name} · ${product.sku} (${product.currentStock})`"
+      :label="`${product.name}${product.variantName ? ` · ${product.variantName}` : ''} · ${product.sku} (${product.currentStock})`"
       :value="product.id"
       :disabled="disabledProductIds.includes(product.id)"
     >

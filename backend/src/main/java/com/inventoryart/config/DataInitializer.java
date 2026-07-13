@@ -6,6 +6,8 @@ import com.inventoryart.order.OrderDtos;
 import com.inventoryart.order.OrderRepository;
 import com.inventoryart.order.OrderService;
 import com.inventoryart.product.Product;
+import com.inventoryart.product.ProductFamily;
+import com.inventoryart.product.ProductFamilyRepository;
 import com.inventoryart.product.ProductRepository;
 import com.inventoryart.tenant.Tenant;
 import com.inventoryart.tenant.TenantRepository;
@@ -36,6 +38,7 @@ public class DataInitializer implements ApplicationRunner {
   private final TenantRepository tenants;
   private final UserRepository users;
   private final ProductRepository products;
+  private final ProductFamilyRepository productFamilies;
   private final PasswordEncoder passwords;
   private final InventoryService inventory;
   private final OrderService orderService;
@@ -53,6 +56,7 @@ public class DataInitializer implements ApplicationRunner {
       TenantRepository tenants,
       UserRepository users,
       ProductRepository products,
+      ProductFamilyRepository productFamilies,
       PasswordEncoder passwords,
       InventoryService inventory,
       OrderService orderService,
@@ -62,6 +66,7 @@ public class DataInitializer implements ApplicationRunner {
     this.tenants = tenants;
     this.users = users;
     this.products = products;
+    this.productFamilies = productFamilies;
     this.passwords = passwords;
     this.inventory = inventory;
     this.orderService = orderService;
@@ -140,7 +145,7 @@ public class DataInitializer implements ApplicationRunner {
       String productName,
       String sku,
       int stock,
-      BigDecimal price) {
+      BigDecimal orderAmount) {
     Tenant tenant =
         tenants
             .findBySlug(slug)
@@ -167,20 +172,32 @@ public class DataInitializer implements ApplicationRunner {
         products
             .findByTenantIdAndSkuIgnoreCase(tenant.getId(), sku)
             .orElseGet(
-                () ->
-                    products.save(
-                        new Product(
-                            UUID.randomUUID(),
-                            tenant.getId(),
-                            sku,
-                            productName,
-                            "Demo",
-                            "Demo Artist",
-                            "Development seed product",
-                            new BigDecimal("3.00"),
-                            price,
-                            "EUR",
-                            3)));
+                () -> {
+                  ProductFamily family =
+                      productFamilies.save(
+                          new ProductFamily(
+                              UUID.randomUUID(),
+                              tenant.getId(),
+                              productName,
+                              "Demo",
+                              "Demo Artist",
+                              "Development seed product"));
+                  return products.save(
+                      new Product(
+                          UUID.randomUUID(),
+                          tenant.getId(),
+                          family.getId(),
+                          null,
+                          sku,
+                          productName,
+                          "Demo",
+                          "Demo Artist",
+                          "Development seed product",
+                          null,
+                          BigDecimal.ZERO,
+                          "EUR",
+                          3));
+                });
     if (product.getCurrentStock() == 0) {
       inventory.apply(
           tenant.getId(),
@@ -199,7 +216,7 @@ public class DataInitializer implements ApplicationRunner {
           new OrderDtos.BatchCreateRequest(
               eventId,
               Instant.now().truncatedTo(ChronoUnit.HOURS),
-              List.of(new OrderDtos.BatchCreateLine(price))));
+              List.of(new OrderDtos.BatchCreateLine(orderAmount))));
     }
   }
 
