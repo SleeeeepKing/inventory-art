@@ -11,8 +11,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json --pretty false",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
-    "format:check": "prettier --check . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
+    "format": "prettier --write . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../.agents/skills/**/*.{md,yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
+    "format:check": "prettier --check . \"../README.md\" \"../AGENTS.md\" \"../docs/**/*.md\" \"../*.{json,yml,yaml}\" \"../.github/**/*.{yml,yaml}\" \"../.agents/skills/**/*.{md,yml,yaml}\" \"../backend/src/main/resources/**/*.{json,yml,yaml}\"",
     "test": "vitest",
     "test:run": "vitest run"
   },

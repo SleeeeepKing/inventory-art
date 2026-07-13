@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inventory Art Verify Change"
+  short_description: "Verify and finish repository changes safely"
+  default_prompt: "Use $inventory-art-verify-change to verify and finish the current repository changes."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inventory Art Production Debug"
+  short_description: "Debug production-backed local environments safely"
+  default_prompt: "Use $inventory-art-prod-debug to diagnose Inventory Art with the local production-debug profile."

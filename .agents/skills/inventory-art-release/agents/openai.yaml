@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inventory Art Release"
+  short_description: "Release and verify Inventory Art deployments"
+  default_prompt: "Use $inventory-art-release to publish the verified Inventory Art changes and confirm deployment."
