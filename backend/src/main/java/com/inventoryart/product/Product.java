@@ -17,6 +17,12 @@ public class Product {
   @Column(nullable = false)
   private String sku;
 
+  @Column(name = "family_id")
+  private UUID familyId;
+
+  @Column(name = "variant_name")
+  private String variantName;
+
   @Column(nullable = false)
   private String name;
 
@@ -87,6 +93,36 @@ public class Product {
     this.updatedAt = createdAt;
   }
 
+  public Product(
+      UUID id,
+      UUID tenantId,
+      UUID familyId,
+      String variantName,
+      String sku,
+      String name,
+      String category,
+      String artistName,
+      String description,
+      BigDecimal costPrice,
+      BigDecimal salePrice,
+      String currency,
+      int lowStockThreshold) {
+    this(
+        id,
+        tenantId,
+        sku,
+        name,
+        category,
+        artistName,
+        description,
+        costPrice,
+        salePrice,
+        currency,
+        lowStockThreshold);
+    this.familyId = familyId;
+    this.variantName = variantName == null ? null : variantName.trim();
+  }
+
   public UUID getId() {
     return id;
   }
@@ -97,6 +133,14 @@ public class Product {
 
   public String getSku() {
     return sku;
+  }
+
+  public UUID getFamilyId() {
+    return familyId;
+  }
+
+  public String getVariantName() {
+    return variantName;
   }
 
   public String getName() {
@@ -174,6 +218,14 @@ public class Product {
     this.costPrice = costPrice;
     this.salePrice = salePrice;
     this.currency = currency.toUpperCase();
+    this.lowStockThreshold = threshold;
+    this.enabled = enabled;
+    this.updatedAt = Instant.now();
+  }
+
+  public void updateVariant(String sku, String variantName, int threshold, boolean enabled) {
+    this.sku = sku.trim().toUpperCase(Locale.ROOT);
+    this.variantName = variantName == null ? null : variantName.trim();
     this.lowStockThreshold = threshold;
     this.enabled = enabled;
     this.updatedAt = Instant.now();

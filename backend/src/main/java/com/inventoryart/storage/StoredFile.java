@@ -53,8 +53,11 @@ public class StoredFile {
   @Column(nullable = false)
   private Status status;
 
-  @Column(name = "product_id", nullable = false)
+  @Column(name = "product_id")
   private UUID productId;
+
+  @Column(name = "product_family_id")
+  private UUID productFamilyId;
 
   @Column(name = "created_by", nullable = false)
   private UUID createdBy;
@@ -82,6 +85,7 @@ public class StoredFile {
       long previewSize,
       String previewChecksum,
       UUID productId,
+      UUID productFamilyId,
       UUID createdBy) {
     StoredFile file = new StoredFile();
     file.id = UUID.randomUUID();
@@ -97,6 +101,7 @@ public class StoredFile {
     file.previewChecksum = previewChecksum;
     file.status = Status.PENDING;
     file.productId = productId;
+    file.productFamilyId = productFamilyId;
     file.createdBy = createdBy;
     file.createdAt = Instant.now();
     return file;
@@ -162,6 +167,10 @@ public class StoredFile {
 
   public UUID getProductId() {
     return productId;
+  }
+
+  public UUID getProductFamilyId() {
+    return productFamilyId;
   }
 
   public UUID getCreatedBy() {

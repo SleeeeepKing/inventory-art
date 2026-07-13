@@ -66,27 +66,21 @@ public class FileService {
     validateImage(request.contentType(), request.size());
     validatePreviewRequest(request.previewSize());
     UUID tenantId = currentUser.tenantId();
-    StorageIdentity identity =
-        jdbc
-            .query(
-                """
-                  select t.slug, p.sku
-                  from products p
-                  join tenants t on t.id = p.tenant_id
-                  where p.tenant_id = ? and p.id = ?
-                  """,
-                (result, row) -> new StorageIdentity(result.getString(1), result.getString(2)),
-                tenantId,
-                request.productId())
-            .stream()
-            .findFirst()
-            .orElseThrow(() -> new NotFoundException("Product"));
+    if ((request.productId() == null) == (request.productFamilyId() == null)) {
+      throw new BusinessException(
+          "INVALID_IMAGE_TARGET", "Exactly one product or product family is required");
+    }
+    StorageIdentity identity = storageIdentity(tenantId, request);
     String checksum = request.checksumSha256().toLowerCase(Locale.ROOT);
     String previewChecksum = request.previewChecksumSha256().toLowerCase(Locale.ROOT);
     String extension = extension(request.originalFilename(), request.contentType());
     String assetRoot =
-        "tenants/%s/products/%s/%s"
-            .formatted(identity.tenantSlug(), keySegment(identity.productSku()), UUID.randomUUID());
+        "tenants/%s/%s/%s/%s"
+            .formatted(
+                identity.tenantSlug(),
+                identity.resourceType(),
+                keySegment(identity.resourceKey()),
+                UUID.randomUUID());
     String key = assetRoot + "/original" + extension;
     String previewKey = assetRoot + "/preview.webp";
     StoredFile file =
@@ -103,6 +97,7 @@ public class FileService {
                 request.previewSize(),
                 previewChecksum,
                 request.productId(),
+                identity.productFamilyId(),
                 currentUser.userId()));
     StorageService.PresignedRequest signed =
         storage.presignPut(key, request.contentType(), request.size(), checksum, presignValidity);
@@ -145,7 +140,9 @@ public class FileService {
     validatePreviewDimensions(file.getPreviewObjectKey());
     Instant now = Instant.now();
     file.confirm(now);
-    if (file.getProductId() != null) {
+    if (file.getProductFamilyId() != null) {
+      confirmFamilyImage(file, now);
+    } else if (file.getProductId() != null) {
       String previousKey =
           jdbc.query(
               "select image_object_key from products where tenant_id=? and id=?",
@@ -179,7 +176,7 @@ public class FileService {
         "STORED_FILE",
         fileId,
         "SUCCESS",
-        Map.of("productId", file.getProductId()));
+        imageAuditDetails(file));
     return new FileDtos.ConfirmFileResponse(file.getId(), file.getStatus().name(), now);
   }
 
@@ -191,6 +188,23 @@ public class FileService {
             .findByObjectKeyAndTenantId(objectKey, currentUser.tenantId())
             .filter(candidate -> candidate.getStatus() == StoredFile.Status.CONFIRMED)
             .filter(candidate -> productId.equals(candidate.getProductId()))
+            .orElse(null);
+    if (file == null) return null;
+    if (file.getPreviewObjectKey() == null
+        && !LEGACY_PREVIEW_TYPES.contains(file.getContentType().toLowerCase(Locale.ROOT))) {
+      return null;
+    }
+    return "/files/%s/preview".formatted(file.getId());
+  }
+
+  @Transactional(readOnly = true)
+  public String productFamilyImageUrl(UUID productFamilyId, String objectKey) {
+    if (objectKey == null || objectKey.isBlank()) return null;
+    StoredFile file =
+        repository
+            .findByObjectKeyAndTenantId(objectKey, currentUser.tenantId())
+            .filter(candidate -> candidate.getStatus() == StoredFile.Status.CONFIRMED)
+            .filter(candidate -> productFamilyId.equals(candidate.getProductFamilyId()))
             .orElse(null);
     if (file == null) return null;
     if (file.getPreviewObjectKey() == null
@@ -232,6 +246,10 @@ public class FileService {
         "update products set image_object_key=null, updated_at=now() where tenant_id=? and image_object_key=?",
         file.getTenantId(),
         file.getObjectKey());
+    jdbc.update(
+        "update product_families set image_object_key=null, updated_at=now() where tenant_id=? and image_object_key=?",
+        file.getTenantId(),
+        file.getObjectKey());
     file.deleted(Instant.now());
     deleteObjectsAfterCommit(file.getObjectKey(), file.getPreviewObjectKey());
     audit.record(
@@ -240,7 +258,7 @@ public class FileService {
         "STORED_FILE",
         fileId,
         "SUCCESS",
-        Map.of("productId", file.getProductId()));
+        imageAuditDetails(file));
   }
 
   void receiveLocalUpload(
@@ -283,6 +301,95 @@ public class FileService {
     return repository
         .findByIdAndTenantId(id, currentUser.tenantId())
         .orElseThrow(() -> new NotFoundException("File"));
+  }
+
+  private StorageIdentity storageIdentity(UUID tenantId, FileDtos.PresignUploadRequest request) {
+    if (request.productFamilyId() != null) {
+      return jdbc
+          .query(
+              """
+                select t.slug, f.id
+                from product_families f
+                join tenants t on t.id=f.tenant_id
+                where f.tenant_id=? and f.id=?
+                """,
+              (result, row) ->
+                  new StorageIdentity(
+                      result.getString(1),
+                      "product-families",
+                      result.getObject(2, UUID.class).toString(),
+                      request.productFamilyId()),
+              tenantId,
+              request.productFamilyId())
+          .stream()
+          .findFirst()
+          .orElseThrow(() -> new NotFoundException("Product family"));
+    }
+    return jdbc
+        .query(
+            """
+              select t.slug, p.sku, p.family_id
+              from products p
+              join tenants t on t.id=p.tenant_id
+              where p.tenant_id=? and p.id=?
+              """,
+            (result, row) ->
+                new StorageIdentity(
+                    result.getString(1),
+                    "products",
+                    result.getString(2),
+                    result.getObject(3, UUID.class)),
+            tenantId,
+            request.productId())
+        .stream()
+        .findFirst()
+        .orElseThrow(() -> new NotFoundException("Product"));
+  }
+
+  private void confirmFamilyImage(StoredFile file, Instant now) {
+    String previousKey =
+        jdbc.query(
+            "select image_object_key from product_families where tenant_id=? and id=?",
+            result -> result.next() ? result.getString(1) : null,
+            file.getTenantId(),
+            file.getProductFamilyId());
+    int updated =
+        jdbc.update(
+            """
+              update product_families set image_object_key=?, updated_at=?
+              where tenant_id=? and id=?
+              """,
+            file.getObjectKey(),
+            Timestamp.from(now),
+            file.getTenantId(),
+            file.getProductFamilyId());
+    if (updated != 1) throw new NotFoundException("Product family");
+    jdbc.update(
+        """
+          update products set image_object_key=?, updated_at=?
+          where tenant_id=? and family_id=?
+          """,
+        file.getObjectKey(),
+        Timestamp.from(now),
+        file.getTenantId(),
+        file.getProductFamilyId());
+    if (previousKey != null && !previousKey.equals(file.getObjectKey())) {
+      repository
+          .findByObjectKeyAndTenantId(previousKey, file.getTenantId())
+          .ifPresent(
+              previous -> {
+                previous.deleted(now);
+                deleteObjectsAfterCommit(previous.getObjectKey(), previous.getPreviewObjectKey());
+              });
+    }
+  }
+
+  private Map<String, Object> imageAuditDetails(StoredFile file) {
+    Map<String, Object> details = new java.util.LinkedHashMap<>();
+    if (file.getProductId() != null) details.put("productId", file.getProductId());
+    if (file.getProductFamilyId() != null)
+      details.put("productFamilyId", file.getProductFamilyId());
+    return Map.copyOf(details);
   }
 
   private static void validateImage(String contentType, long size) {
@@ -436,5 +543,6 @@ public class FileService {
 
   public record PreviewContent(String contentType, Long size, InputStream input) {}
 
-  private record StorageIdentity(String tenantSlug, String productSku) {}
+  private record StorageIdentity(
+      String tenantSlug, String resourceType, String resourceKey, UUID productFamilyId) {}
 }

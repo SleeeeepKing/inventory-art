@@ -159,11 +159,25 @@ class InventoryArtIntegrationTest {
     assertThat(columns("stored_files"))
         .contains(
             "product_id",
+            "product_family_id",
             "preview_object_key",
             "preview_content_type",
             "preview_size",
             "preview_checksum")
         .doesNotContain("purpose", "resource_type", "resource_id");
+    assertThat(columns("product_families"))
+        .containsExactlyInAnyOrder(
+            "id",
+            "tenant_id",
+            "name",
+            "category",
+            "artist_name",
+            "description",
+            "image_object_key",
+            "version",
+            "created_at",
+            "updated_at");
+    assertThat(columns("products")).contains("family_id", "variant_name");
   }
 
   @Test
@@ -310,6 +324,160 @@ class InventoryArtIntegrationTest {
         .andExpect(jsonPath("$", org.hamcrest.Matchers.hasItems("Print", "Sculpture")))
         .andExpect(
             jsonPath("$", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("Photography"))));
+  }
+
+  @Test
+  void productFamilyCreatesVariantsAtomicallyWithServerDefaultsAndTenantIsolation()
+      throws Exception {
+    Fixture owner = fixture("family-owner");
+    Fixture other = fixture("family-other");
+    String response =
+        mvc.perform(
+                post("/api/v1/product-families")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "name",
+                                "Blue Garden",
+                                "category",
+                                "Print",
+                                "artistName",
+                                "Mina",
+                                "variants",
+                                List.of(
+                                    Map.of("variantName", "A5", "sku", "BLUE-A5"),
+                                    Map.of(
+                                        "variantName",
+                                        "A4",
+                                        "sku",
+                                        "BLUE-A4",
+                                        "initialStock",
+                                        0,
+                                        "lowStockThreshold",
+                                        0))))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.name").value("Blue Garden"))
+            .andExpect(jsonPath("$.variants.length()").value(2))
+            .andExpect(jsonPath("$.variants[0].currentStock").value(0))
+            .andExpect(jsonPath("$.variants[0].lowStockThreshold").value(0))
+            .andExpect(jsonPath("$.variants[1].currentStock").value(999))
+            .andExpect(jsonPath("$.variants[1].lowStockThreshold").value(5))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    UUID familyId = UUID.fromString(json.readTree(response).get("id").asText());
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from products where tenant_id=? and family_id=?",
+                Integer.class,
+                owner.tenant().getId(),
+                familyId))
+        .isEqualTo(2);
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from inventory_movements where tenant_id=? and movement_type='INITIAL' and quantity=999",
+                Integer.class,
+                owner.tenant().getId()))
+        .isEqualTo(1);
+    mvc.perform(get("/api/v1/product-families/{id}", familyId).with(userJwt(other)))
+        .andExpect(status().isNotFound());
+
+    mvc.perform(
+            post("/api/v1/product-families")
+                .with(userJwt(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "name",
+                            "Duplicate",
+                            "variants",
+                            List.of(
+                                Map.of("variantName", "A5", "sku", "DUPLICATE"),
+                                Map.of("variantName", "A4", "sku", "duplicate"))))))
+        .andExpect(status().isConflict());
+    assertThat(
+            jdbc.queryForObject(
+                "select count(*) from product_families where tenant_id=? and name='Duplicate'",
+                Integer.class,
+                owner.tenant().getId()))
+        .isZero();
+  }
+
+  @Test
+  void productFamilyImageUploadsOnceAndIsTenantScoped() throws Exception {
+    Fixture owner = fixture("family-image-owner");
+    Fixture other = fixture("family-image-other");
+    String familyResponse =
+        mvc.perform(
+                post("/api/v1/product-families")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "name",
+                                "Shared Image",
+                                "variants",
+                                List.of(Map.of("variantName", "A4", "sku", "SHARED-A4"))))))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID familyId = UUID.fromString(json.readTree(familyResponse).get("id").asText());
+    byte[] original = "shared-family-image".getBytes(StandardCharsets.UTF_8);
+    byte[] preview = webpPreview(480, 320);
+
+    String presignResponse =
+        mvc.perform(
+                post("/api/v1/files/presign")
+                    .with(userJwt(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "originalFilename",
+                                "shared.png",
+                                "contentType",
+                                "image/png",
+                                "size",
+                                original.length,
+                                "checksumSha256",
+                                sha256(original),
+                                "previewSize",
+                                preview.length,
+                                "previewChecksumSha256",
+                                sha256(preview),
+                                "productFamilyId",
+                                familyId))))
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.objectKey")
+                    .value(
+                        org.hamcrest.Matchers.matchesPattern(
+                            "tenants/"
+                                + owner.tenant().getSlug()
+                                + "/product-families/"
+                                + familyId
+                                + "/[0-9a-f-]+/original\\.png")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    JsonNode presigned = json.readTree(presignResponse);
+    uploadLocal(presigned, "uploadUrl", "headers", original);
+    uploadLocal(presigned, "previewUploadUrl", "previewHeaders", preview);
+    UUID fileId = UUID.fromString(presigned.get("fileId").asText());
+    mvc.perform(post("/api/v1/files/{fileId}/confirm", fileId).with(userJwt(owner)))
+        .andExpect(status().isOk());
+
+    mvc.perform(get("/api/v1/product-families/{id}", familyId).with(userJwt(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.imageUrl").value("/files/" + fileId + "/preview"));
+    mvc.perform(get("/api/v1/files/{fileId}/preview", fileId).with(userJwt(other)))
+        .andExpect(status().isNotFound());
   }
 
   @Test
