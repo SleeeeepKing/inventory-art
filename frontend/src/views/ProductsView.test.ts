@@ -89,6 +89,79 @@ describe('ProductsView families', () => {
     })
   })
 
+  it('shows stock and sales for each product without family totals', async () => {
+    mocks.get.mockImplementation((path: string) =>
+      Promise.resolve({
+        data:
+          path === '/products/categories'
+            ? []
+            : {
+                items: [
+                  {
+                    id: 'family-1',
+                    name: 'Blue Garden',
+                    version: 0,
+                    createdAt: '2026-07-13T10:00:00Z',
+                    updatedAt: '2026-07-13T10:00:00Z',
+                    variants: [
+                      {
+                        id: 'variant-a4',
+                        variantName: 'A4',
+                        sku: 'BLUE-A4',
+                        currentStock: 7,
+                        lowStockThreshold: 5,
+                        enabled: true,
+                        totalUnitsSold: 3,
+                        lastSaleDate: '2026-07-12',
+                        version: 0,
+                        createdAt: '2026-07-13T10:00:00Z',
+                        updatedAt: '2026-07-13T10:00:00Z',
+                      },
+                      {
+                        id: 'variant-a5',
+                        variantName: 'A5',
+                        sku: 'BLUE-A5',
+                        currentStock: 11,
+                        lowStockThreshold: 5,
+                        enabled: true,
+                        totalUnitsSold: 5,
+                        lastSaleDate: '2026-07-11',
+                        version: 0,
+                        createdAt: '2026-07-13T10:00:00Z',
+                        updatedAt: '2026-07-13T10:00:00Z',
+                      },
+                    ],
+                  },
+                ],
+                page: 0,
+                size: 20,
+                totalElements: 1,
+                totalPages: 1,
+              },
+      }),
+    )
+
+    const wrapper = mount(ProductsView, {
+      global: { plugins: [createPinia(), i18n, ElementPlus], stubs: { EmptyState: true } },
+    })
+    await flushPromises()
+
+    const memberRows = wrapper.findAll('.family-table .variant-ledger__row')
+    const mobileMemberRows = wrapper.findAll('.family-card-list .variant-ledger__row')
+    expect(memberRows).toHaveLength(2)
+    expect(mobileMemberRows).toHaveLength(2)
+    expect(memberRows[0].text()).toContain('A4')
+    expect(memberRows[0].text()).toContain('BLUE-A4')
+    expect(memberRows[0].find('.variant-ledger__stock').text()).toBe('7')
+    expect(memberRows[0].find('.variant-ledger__sales strong').text()).toBe('3 sold')
+    expect(memberRows[1].text()).toContain('A5')
+    expect(memberRows[1].text()).toContain('BLUE-A5')
+    expect(memberRows[1].find('.variant-ledger__stock').text()).toBe('11')
+    expect(memberRows[1].find('.variant-ledger__sales strong').text()).toBe('5 sold')
+    expect(wrapper.text()).not.toContain('18')
+    expect(wrapper.text()).not.toContain('8 sold')
+  })
+
   it('creates an artwork with server-aligned stock defaults in one request', async () => {
     const wrapper = mount(ProductsView, {
       attachTo: document.body,

@@ -110,6 +110,8 @@ export const frFR: MessageSchema = {
     commonInformation: 'Informations partagées',
     stockIdentity: 'Identité du stock',
     variants: 'Formats et variantes',
+    familyProducts: 'Produits distincts',
+    productIdentity: 'Format / UGS',
     addVariant: 'Ajouter un format',
     variantName: 'Format ou variante',
     variantExample: 'Par exemple A4',

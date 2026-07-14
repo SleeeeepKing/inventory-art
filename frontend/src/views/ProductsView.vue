@@ -8,10 +8,10 @@ import { api, resolveApiUrl } from '@/services/api'
 import { createImagePreview, sha256 } from '@/services/imagePreview'
 import { normalizePage } from '@/services/paging'
 import { useApiFeedback } from '@/composables/useApiFeedback'
-import { useFormatters } from '@/composables/useFormatters'
 import type { PageResponse, ProductFamily } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ProductFamilyMembers from '@/components/ProductFamilyMembers.vue'
 import SecureImage from '@/components/SecureImage.vue'
 
 interface VariantForm {
@@ -26,7 +26,6 @@ interface VariantForm {
 
 const { t } = useI18n()
 const { showError } = useApiFeedback()
-const { number, date } = useFormatters()
 const loading = ref(false)
 const saving = ref(false)
 const deletingId = ref('')
@@ -58,16 +57,6 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 
-const totalStock = (family: ProductFamily) =>
-  family.variants.reduce((sum, variant) => sum + variant.currentStock, 0)
-const totalSold = (family: ProductFamily) =>
-  family.variants.reduce((sum, variant) => sum + (variant.totalUnitsSold || 0), 0)
-const latestSale = (family: ProductFamily) =>
-  family.variants
-    .map((variant) => variant.lastSaleDate)
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1)
 const dialogTitle = computed(() =>
   t(editingFamilyId.value ? 'products.editFamily' : 'products.createFamily'),
 )
@@ -351,82 +340,87 @@ onMounted(() => {
         }}</span>
       </div>
 
-      <ElTable
-        v-if="page.items.length || loading"
-        v-loading="loading"
-        :data="page.items"
-        row-key="id"
-        class="family-table"
-      >
-        <ElTableColumn width="76">
-          <template #default="scope">
-            <div class="product-thumb">
-              <SecureImage :src="scope.row.imageUrl" :alt="scope.row.name">
-                <span>{{ scope.row.name.slice(0, 1).toUpperCase() }}</span>
-              </SecureImage>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('products.artwork')" min-width="230">
-          <template #default="scope">
-            <div class="cell-stack">
-              <strong>{{ scope.row.name }}</strong>
-              <small>{{
-                [scope.row.artistName, scope.row.category].filter(Boolean).join(' · ') || '—'
-              }}</small>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('products.variants')" min-width="320">
-          <template #default="scope">
-            <div class="variant-ribbon">
-              <span
-                v-for="variant in scope.row.variants"
-                :key="variant.id"
-                class="variant-ticket"
-                :data-active="variant.enabled"
-              >
-                <strong>{{ variant.variantName || t('products.legacyVariant') }}</strong>
-                <code>{{ variant.sku }}</code>
-                <small>{{ number(variant.currentStock) }}</small>
-              </span>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('products.stock')" align="right" min-width="100">
-          <template #default="scope">{{ number(totalStock(scope.row)) }}</template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('products.salesHistory')" min-width="170">
-          <template #default="scope">
-            <div class="cell-stack">
-              <strong>{{
-                t('products.unitsSoldValue', { count: number(totalSold(scope.row)) })
-              }}</strong>
-              <small>{{
-                latestSale(scope.row) ? date(latestSale(scope.row)!) : t('products.neverSold')
-              }}</small>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('common.actions')" width="112" fixed="right">
-          <template #default="scope">
-            <ElButton
-              text
-              :icon="Edit"
-              :aria-label="t('common.edit')"
-              @click="openEdit(scope.row)"
-            />
-            <ElButton
-              text
-              type="danger"
-              :icon="Delete"
-              :loading="deletingId === scope.row.id"
-              :aria-label="t('common.delete')"
-              @click="remove(scope.row)"
-            />
-          </template>
-        </ElTableColumn>
-      </ElTable>
+      <template v-if="page.items.length || loading">
+        <ElTable v-loading="loading" :data="page.items" row-key="id" class="family-table">
+          <ElTableColumn width="76">
+            <template #default="scope">
+              <div class="product-thumb">
+                <SecureImage :src="scope.row.imageUrl" :alt="scope.row.name">
+                  <span>{{ scope.row.name.slice(0, 1).toUpperCase() }}</span>
+                </SecureImage>
+              </div>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('products.artwork')" min-width="230">
+            <template #default="scope">
+              <div class="cell-stack">
+                <strong>{{ scope.row.name }}</strong>
+                <small>{{
+                  [scope.row.artistName, scope.row.category].filter(Boolean).join(' · ') || '—'
+                }}</small>
+              </div>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('products.familyProducts')" min-width="520">
+            <template #default="scope">
+              <ProductFamilyMembers :variants="scope.row.variants" />
+            </template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('common.actions')" width="112" fixed="right">
+            <template #default="scope">
+              <ElButton
+                text
+                :icon="Edit"
+                :aria-label="t('common.edit')"
+                @click="openEdit(scope.row)"
+              />
+              <ElButton
+                text
+                type="danger"
+                :icon="Delete"
+                :loading="deletingId === scope.row.id"
+                :aria-label="t('common.delete')"
+                @click="remove(scope.row)"
+              />
+            </template>
+          </ElTableColumn>
+        </ElTable>
+
+        <div v-loading="loading" class="family-card-list">
+          <article v-for="family in page.items" :key="family.id" class="family-card">
+            <header class="family-card__header">
+              <div class="product-thumb">
+                <SecureImage :src="family.imageUrl" :alt="family.name">
+                  <span>{{ family.name.slice(0, 1).toUpperCase() }}</span>
+                </SecureImage>
+              </div>
+              <div class="cell-stack">
+                <strong>{{ family.name }}</strong>
+                <small>{{
+                  [family.artistName, family.category].filter(Boolean).join(' · ') || '—'
+                }}</small>
+              </div>
+              <div class="family-card__actions">
+                <ElButton
+                  text
+                  :icon="Edit"
+                  :aria-label="t('common.edit')"
+                  @click="openEdit(family)"
+                />
+                <ElButton
+                  text
+                  type="danger"
+                  :icon="Delete"
+                  :loading="deletingId === family.id"
+                  :aria-label="t('common.delete')"
+                  @click="remove(family)"
+                />
+              </div>
+            </header>
+            <ProductFamilyMembers :variants="family.variants" />
+          </article>
+        </div>
+      </template>
 
       <EmptyState v-else :title="t('products.emptyTitle')" :body="t('products.emptyBody')">
         <ElButton type="primary" :icon="Plus" @click="openCreate">{{

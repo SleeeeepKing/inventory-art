@@ -108,6 +108,8 @@ export const en = {
     commonInformation: 'Shared information',
     stockIdentity: 'Stock identity',
     variants: 'Sizes and variants',
+    familyProducts: 'Individual products',
+    productIdentity: 'Size / SKU',
     addVariant: 'Add size',
     variantName: 'Size or variant',
     variantExample: 'For example A4',

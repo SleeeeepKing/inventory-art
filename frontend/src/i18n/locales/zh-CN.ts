@@ -110,6 +110,8 @@ export const zhCN: MessageSchema = {
     commonInformation: '公共信息',
     stockIdentity: '库存标识',
     variants: '尺寸与规格',
+    familyProducts: '独立商品',
+    productIdentity: '规格 / SKU',
     addVariant: '添加规格',
     variantName: '规格名称',
     variantExample: '例如 A4',
