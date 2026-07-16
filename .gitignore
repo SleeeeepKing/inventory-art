@@ -1,9 +1,41 @@
+# Local environment and secret material
 .env
+.env.*
+!.env.example
+!**/.env.example
+!frontend/.env.development
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# IDE and operating-system files
 .idea/
+.vscode/
 .DS_Store
+
+# Dependencies, generated output, and coverage
 backend/target/
 frontend/node_modules/
 frontend/dist/
-storage-data/
-*.log
+coverage/
 
+# Runtime data, uploads, logs, and backups
+storage-data/
+**/storage-data/
+uploads/
+**/uploads/
+backups/
+**/backups/
+logs/
+**/logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+*.backup
