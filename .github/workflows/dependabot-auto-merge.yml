@@ -1,0 +1,93 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  approve-and-enable-auto-merge:
+    name: Approve safe dependency updates
+    if: github.actor == 'dependabot[bot]' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Read Dependabot metadata
+        id: dependabot-metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enforce the automatic merge policy
+        id: policy
+        env:
+          DIRECTORY: ${{ steps.dependabot-metadata.outputs.directory }}
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_ECOSYSTEM: ${{ steps.dependabot-metadata.outputs.package-ecosystem }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          UPDATE_TYPE: ${{ steps.dependabot-metadata.outputs.update-type }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch | version-update:semver-minor) ;;
+            *)
+              echo "Update type is not eligible: $UPDATE_TYPE"
+              echo "eligible=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          case "$PACKAGE_ECOSYSTEM:$DIRECTORY" in
+            maven:/backend)
+              allowed_file_pattern='^backend/pom\.xml$'
+              ;;
+            npm_and_yarn:/frontend)
+              allowed_file_pattern='^frontend/(package\.json|package-lock\.json)$'
+              ;;
+            *)
+              echo "Package source is not eligible: $PACKAGE_ECOSYSTEM:$DIRECTORY"
+              echo "eligible=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          changed_files="$({
+            gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" \
+              --jq '.[].filename'
+          })"
+
+          if [[ -z "$changed_files" ]]; then
+            echo "The pull request has no changed files."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          while IFS= read -r changed_file; do
+            if [[ ! "$changed_file" =~ $allowed_file_pattern ]]; then
+              echo "Changed file is outside the automatic merge policy: $changed_file"
+              echo "eligible=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<< "$changed_files"
+
+          echo "All changes match the automatic merge policy."
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: Approve the pull request
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr review --approve --body "Automatically approved by the repository's safe dependency update policy." "$PR_URL"
+
+      - name: Enable squash auto-merge
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
