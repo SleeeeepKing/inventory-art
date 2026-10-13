@@ -2183,6 +2183,16 @@ body.nav-open {
   }
 }
 
+/* Keep focused fields readable without iOS zooming the page, including in landscape. */
+@media (max-width: 768px), (pointer: coarse) {
+  .el-input__inner,
+  .el-textarea__inner,
+  .el-select__input,
+  .el-date-editor .el-range-input {
+    font-size: 16px;
+  }
+}
+
 @media (max-width: 768px) {
   .side-nav,
   .app-shell.is-collapsed .side-nav {
